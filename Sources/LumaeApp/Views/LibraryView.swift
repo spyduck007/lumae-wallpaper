@@ -19,6 +19,7 @@ struct LibraryView: View {
                 Section("Displays") { Label("Display Layout", systemImage: "display.2").tag(SidebarSection.displays) }
             }
             .navigationTitle("Lumae")
+            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
         } detail: {
             Group {
                 if selectedSection == .displays { DisplayLayoutView() }
@@ -27,7 +28,7 @@ struct LibraryView: View {
             .navigationTitle(title)
             .toolbar { toolbar }
         }
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search names, tags, and categories")
+        .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search wallpapers")
         .dropDestination(for: URL.self) { urls, _ in Task { await model.importURLs(urls) }; return true } isTargeted: { isDropTargeted = $0 }
         .overlay { if isDropTargeted { RoundedRectangle(cornerRadius: 16).stroke(.tint, style: StrokeStyle(lineWidth: 3, dash: [8])).padding(16).background(.tint.opacity(0.08)) } }
         .alert("Lumae couldn’t complete that action", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(model.errorMessage ?? "Unknown error") }
@@ -35,9 +36,34 @@ struct LibraryView: View {
 
     @ViewBuilder private var libraryContent: some View {
         let items = sectionItems
-        if model.isLoading { ProgressView("Loading wallpaper library…").frame(maxWidth: .infinity, maxHeight: .infinity) }
-        else if items.isEmpty { ContentUnavailableView("No Wallpapers", systemImage: "photo.on.rectangle.angled", description: Text("Import JPG, PNG, HEIC, TIFF, GIF, MP4, MOV, or M4V files. Files stay local.")) .overlay(alignment: .bottom) { Button("Import Wallpapers…") { model.presentImporter() }.buttonStyle(.borderedProminent).padding(60) } }
-        else if model.viewMode == .grid { WallpaperGrid(items: items) }
+        if model.isLoading {
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.large)
+                Text("Loading wallpaper library…")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if items.isEmpty {
+            VStack(spacing: 14) {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.system(size: 46, weight: .light))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text("No Wallpapers")
+                    .font(.title2.bold())
+                Text("Import JPG, PNG, HEIC, TIFF, GIF, MP4, MOV, or M4V files. Your files stay local.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 480)
+                Button("Import Wallpapers…") { model.presentImporter() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .padding(.top, 4)
+            }
+            .padding(40)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if model.viewMode == .grid { WallpaperGrid(items: items) }
         else { WallpaperList(items: items) }
     }
 

@@ -12,6 +12,13 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var isLoading = false
     @Published var isPaused = false
+    @Published var isMenuBarVisible = true {
+        didSet {
+            guard isMenuBarVisible != state.settings.menuBarVisible else { return }
+            state.settings.menuBarVisible = isMenuBarVisible
+            persistSoon()
+        }
+    }
 
     let store = JSONStateStore()
     let importer = WallpaperImporter()
@@ -36,6 +43,7 @@ final class AppModel: ObservableObject {
         defer { isLoading = false }
         do {
             state = try await store.load()
+            isMenuBarVisible = state.settings.menuBarVisible
             state.wallpapers = state.wallpapers.map { item in
                 var copy = item; copy.isMissing = !FileManager.default.fileExists(atPath: item.effectiveFilePath); return copy
             }
