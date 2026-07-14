@@ -84,15 +84,29 @@ struct LumaeCommands: Commands {
         }
 
         CommandMenu("Wallpaper") {
-            Button(model.isPaused ? "Resume Playback" : "Pause Playback") {
+            Button(model.isPaused ? "Resume Wallpaper Playback" : "Pause Wallpaper Playback") {
                 model.togglePause()
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
 
+            Divider()
+
+            Button("Previous in Playlist") {
+                model.advanceActivePlaylist(.previous)
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+            .disabled(model.activePlaylist == nil)
+
+            Button(model.activePlaylistIsRunning ? "Pause Playlist" : "Resume Playlist") {
+                model.toggleActivePlaylist()
+            }
+            .disabled(model.activePlaylist == nil)
+
             Button("Next in Playlist") {
-                model.advancePlaylist()
+                model.advanceActivePlaylist(.next)
             }
             .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+            .disabled(model.activePlaylist == nil)
         }
     }
 }

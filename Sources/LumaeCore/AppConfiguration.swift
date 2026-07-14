@@ -129,6 +129,8 @@ public struct PersistedApplicationState: Codable, Hashable, Sendable {
     public var settings: AppSettings
     public var sharedWallpaperID: UUID?
     public var lastKnownTopology: DisplayTopology?
+    public var playlists: [WallpaperPlaylist]?
+    public var activePlaylistID: UUID?
 
     public init(
         schemaVersion: Int = 1,
@@ -136,7 +138,9 @@ public struct PersistedApplicationState: Codable, Hashable, Sendable {
         assignments: [DisplayAssignment] = [],
         settings: AppSettings = AppSettings(),
         sharedWallpaperID: UUID? = nil,
-        lastKnownTopology: DisplayTopology? = nil
+        lastKnownTopology: DisplayTopology? = nil,
+        playlists: [WallpaperPlaylist]? = nil,
+        activePlaylistID: UUID? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.wallpapers = wallpapers
@@ -144,5 +148,7 @@ public struct PersistedApplicationState: Codable, Hashable, Sendable {
         self.settings = settings
         self.sharedWallpaperID = sharedWallpaperID
         self.lastKnownTopology = lastKnownTopology
+        self.playlists = playlists
+        self.activePlaylistID = activePlaylistID
     }
 }

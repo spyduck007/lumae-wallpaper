@@ -23,6 +23,7 @@ final class AppModel: ObservableObject {
     let launchAtLogin = LaunchAtLoginService()
 
     private var configurationApplyTask: Task<Void, Never>?
+    private var playlistRotationTask: Task<Void, Never>?
 
     var filteredWallpapers: [WallpaperMetadata] {
         let filter = LibraryFilter(query: searchText)
@@ -56,6 +57,7 @@ final class AppModel: ObservableObject {
                     topology: self.displayService.currentTopology
                 )
             }
+            self.schedulePlaylistRotation()
         }
     }
 
@@ -65,6 +67,7 @@ final class AppModel: ObservableObject {
 
         do {
             state = try await store.load()
+            normalizePlaylistState()
             state.wallpapers = state.wallpapers.map { item in
                 var copy = item
                 copy.isMissing = !FileManager.default.fileExists(
@@ -338,16 +341,7 @@ final class AppModel: ObservableObject {
     }
 
     func advancePlaylist() {
-        var playlist = state.settings.playlist
-        guard let id = PlaylistEngine.nextID(
-            configuration: &playlist,
-            availableIDs: Set(state.wallpapers.map(\.id))
-        ) else {
-            return
-        }
-        state.settings.playlist = playlist
-        selectedWallpaperID = id
-        Task { await applySelected() }
+        advanceActivePlaylist(.next)
     }
 
     func handleTopology(_ topology: DisplayTopology) async {
@@ -442,4 +436,316 @@ final class AppModel: ObservableObject {
 enum LibraryViewMode: String, CaseIterable {
     case grid
     case list
+}
+
+
+extension AppModel {
+    var playlists: [WallpaperPlaylist] {
+        get { state.playlists ?? [] }
+        set { state.playlists = newValue }
+    }
+
+    var activePlaylist: WallpaperPlaylist? {
+        guard let id = state.activePlaylistID else { return nil }
+        return playlists.first { $0.id == id }
+    }
+
+    var activePlaylistIsRunning: Bool {
+        activePlaylist?.isRunning == true
+    }
+
+    func playlist(id: UUID) -> WallpaperPlaylist? {
+        playlists.first { $0.id == id }
+    }
+
+    @discardableResult
+    func createPlaylist(named proposedName: String = "New Playlist") -> UUID {
+        let trimmed = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName = trimmed.isEmpty ? "New Playlist" : trimmed
+        let existingNames = Set(playlists.map { $0.name.lowercased() })
+        var name = baseName
+        var suffix = 2
+        while existingNames.contains(name.lowercased()) {
+            name = "\(baseName) \(suffix)"
+            suffix += 1
+        }
+
+        let playlist = WallpaperPlaylist(name: name)
+        playlists.append(playlist)
+        persistSoon()
+        return playlist.id
+    }
+
+    func deletePlaylist(id: UUID) {
+        playlists.removeAll { $0.id == id }
+        if state.activePlaylistID == id {
+            state.activePlaylistID = nil
+            playlistRotationTask?.cancel()
+            playlistRotationTask = nil
+        }
+        persistSoon()
+    }
+
+    func renamePlaylist(id: UUID, to proposedName: String) -> Bool {
+        let trimmed = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorMessage = "Playlist names cannot be empty."
+            return false
+        }
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        playlists[index].name = trimmed
+        persistSoon()
+        return true
+    }
+
+    func addWallpaper(_ wallpaperID: UUID, toPlaylist id: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        guard !playlists[index].wallpaperIDs.contains(wallpaperID) else { return }
+        playlists[index].wallpaperIDs.append(wallpaperID)
+        persistSoon()
+        schedulePlaylistRotation()
+    }
+
+    func removeWallpaper(at offsets: IndexSet, fromPlaylist id: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        let removed = offsets.compactMap { position in
+            playlists[index].wallpaperIDs.indices.contains(position)
+                ? playlists[index].wallpaperIDs[position]
+                : nil
+        }
+        playlists[index].wallpaperIDs.remove(atOffsets: offsets)
+        if let current = playlists[index].currentWallpaperID,
+           removed.contains(current) {
+            playlists[index].currentWallpaperID = nil
+        }
+        persistSoon()
+        schedulePlaylistRotation()
+    }
+
+    func moveWallpaper(
+        inPlaylist id: UUID,
+        from source: IndexSet,
+        to destination: Int
+    ) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        playlists[index].wallpaperIDs.move(fromOffsets: source, toOffset: destination)
+        playlists[index].cursor = min(
+            playlists[index].cursor,
+            max(playlists[index].wallpaperIDs.count - 1, 0)
+        )
+        persistSoon()
+    }
+
+    func moveWallpaperUp(_ wallpaperID: UUID, inPlaylist id: UUID) {
+        guard let playlistIndex = playlists.firstIndex(where: { $0.id == id }),
+              let itemIndex = playlists[playlistIndex].wallpaperIDs.firstIndex(of: wallpaperID),
+              itemIndex > 0 else { return }
+        playlists[playlistIndex].wallpaperIDs.swapAt(itemIndex, itemIndex - 1)
+        persistSoon()
+    }
+
+    func moveWallpaperDown(_ wallpaperID: UUID, inPlaylist id: UUID) {
+        guard let playlistIndex = playlists.firstIndex(where: { $0.id == id }),
+              let itemIndex = playlists[playlistIndex].wallpaperIDs.firstIndex(of: wallpaperID),
+              itemIndex + 1 < playlists[playlistIndex].wallpaperIDs.count else { return }
+        playlists[playlistIndex].wallpaperIDs.swapAt(itemIndex, itemIndex + 1)
+        persistSoon()
+    }
+
+    func setPlaylistShuffle(_ shuffle: Bool, id: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        playlists[index].shuffle = shuffle
+        playlists[index].history.removeAll()
+        persistSoon()
+    }
+
+    func setPlaylistInterval(_ interval: TimeInterval, id: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        playlists[index].intervalSeconds = max(interval, 10)
+        persistSoon()
+        schedulePlaylistRotation()
+    }
+
+    func setPlaylistTarget(_ target: PlaylistTarget, id: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        playlists[index].target = target
+        persistSoon()
+    }
+
+    func startPlaylist(id: UUID) {
+        guard let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        for candidate in playlists.indices {
+            playlists[candidate].isRunning = candidate == index
+        }
+        state.activePlaylistID = id
+        playlists[index].lastAdvancedAt = Date()
+        persistSoon()
+
+        if let currentID = playlists[index].currentWallpaperID,
+           let wallpaper = state.wallpapers.first(where: { $0.id == currentID && !$0.isMissing }) {
+            let target = playlists[index].target
+            Task {
+                await applyPlaylistWallpaper(wallpaper, target: target)
+                schedulePlaylistRotation()
+            }
+        } else {
+            advanceActivePlaylist(.next)
+        }
+    }
+
+    func pauseActivePlaylist() {
+        guard let id = state.activePlaylistID,
+              let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        playlists[index].isRunning = false
+        playlistRotationTask?.cancel()
+        playlistRotationTask = nil
+        persistSoon()
+    }
+
+    func resumeActivePlaylist() {
+        guard let id = state.activePlaylistID,
+              let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        playlists[index].isRunning = true
+        playlists[index].lastAdvancedAt = Date()
+        persistSoon()
+        schedulePlaylistRotation()
+    }
+
+    func toggleActivePlaylist() {
+        activePlaylistIsRunning ? pauseActivePlaylist() : resumeActivePlaylist()
+    }
+
+    func advanceActivePlaylist(_ direction: PlaylistDirection) {
+        guard let activeID = state.activePlaylistID,
+              let index = playlists.firstIndex(where: { $0.id == activeID }) else {
+            return
+        }
+
+        let availableIDs = Set(
+            state.wallpapers
+                .filter { !$0.isMissing && $0.kind != .unsupported }
+                .map(\.id)
+        )
+        guard let wallpaperID = WallpaperPlaylistEngine.advance(
+            playlist: &playlists[index],
+            direction: direction,
+            availableIDs: availableIDs
+        ), let wallpaper = state.wallpapers.first(where: { $0.id == wallpaperID }) else {
+            errorMessage = "This playlist has no available wallpapers."
+            schedulePlaylistRotation()
+            return
+        }
+
+        selectedWallpaperID = wallpaperID
+        let target = playlists[index].target
+        Task {
+            await applyPlaylistWallpaper(wallpaper, target: target)
+            schedulePlaylistRotation()
+        }
+        persistSoon()
+    }
+
+    func setActivePlaylist(id: UUID?) {
+        guard state.activePlaylistID != id else { return }
+        for index in playlists.indices {
+            playlists[index].isRunning = false
+        }
+        state.activePlaylistID = id
+        playlistRotationTask?.cancel()
+        playlistRotationTask = nil
+        persistSoon()
+    }
+
+    private func normalizePlaylistState() {
+        if state.playlists == nil {
+            let legacy = state.settings.playlist
+            if !legacy.wallpaperIDs.isEmpty {
+                let migrated = WallpaperPlaylist(
+                    name: "Imported Playlist",
+                    wallpaperIDs: legacy.wallpaperIDs,
+                    intervalSeconds: legacy.intervalSeconds,
+                    shuffle: legacy.shuffle,
+                    isRunning: legacy.isEnabled,
+                    cursor: legacy.cursor
+                )
+                state.playlists = [migrated]
+                state.activePlaylistID = legacy.isEnabled ? migrated.id : nil
+            } else {
+                state.playlists = []
+            }
+        }
+
+        let ids = Set(playlists.map(\.id))
+        if let activeID = state.activePlaylistID, !ids.contains(activeID) {
+            state.activePlaylistID = nil
+        }
+        if let activeID = state.activePlaylistID {
+            for index in playlists.indices {
+                playlists[index].isRunning = playlists[index].id == activeID
+                    && playlists[index].isRunning
+            }
+        }
+    }
+
+    private func schedulePlaylistRotation() {
+        playlistRotationTask?.cancel()
+        playlistRotationTask = nil
+
+        guard let activeID = state.activePlaylistID,
+              let playlist = playlists.first(where: { $0.id == activeID }),
+              playlist.isRunning,
+              !playlist.wallpaperIDs.isEmpty else {
+            return
+        }
+
+        let elapsed = playlist.lastAdvancedAt.map { Date().timeIntervalSince($0) } ?? 0
+        let delay = max(playlist.intervalSeconds - elapsed, 1)
+
+        playlistRotationTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.advanceActivePlaylist(.next)
+            }
+        }
+    }
+
+    private func applyPlaylistWallpaper(
+        _ wallpaper: WallpaperMetadata,
+        target: PlaylistTarget
+    ) async {
+        switch target {
+        case .currentPresentation:
+            await apply(wallpaper)
+
+        case .display(let fingerprint):
+            guard let display = displayTopology.displays.max(by: {
+                $0.fingerprint.matchScore(against: fingerprint)
+                    < $1.fingerprint.matchScore(against: fingerprint)
+            }), display.fingerprint.matchScore(against: fingerprint) >= 200 else {
+                errorMessage = "The playlist’s target display is not connected."
+                return
+            }
+
+            state.settings.presentationMode = .perDisplay
+            reconcileAssignments(onto: displayTopology)
+            if let assignmentIndex = state.assignments.firstIndex(where: { $0.id == display.id }) {
+                state.assignments[assignmentIndex].wallpaperID = wallpaper.id
+                state.assignments[assignmentIndex].enabled = true
+            }
+            markWallpaperUsed(wallpaper.id)
+
+            do {
+                try await engine.applyConfiguration(
+                    state: state,
+                    topology: displayTopology
+                )
+                try await save()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
 }

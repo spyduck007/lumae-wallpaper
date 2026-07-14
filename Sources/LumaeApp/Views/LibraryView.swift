@@ -21,6 +21,31 @@ struct LibraryView: View {
                         .tag(SidebarSection.missing)
                 }
 
+                Section("Playlists") {
+                    ForEach(model.playlists) { playlist in
+                        HStack(spacing: 8) {
+                            Label(playlist.name, systemImage: "music.note.list")
+                                .lineLimit(1)
+                            Spacer()
+                            if model.state.activePlaylistID == playlist.id {
+                                Circle()
+                                    .fill(playlist.isRunning ? Color.green : Color.orange)
+                                    .frame(width: 7, height: 7)
+                                    .accessibilityLabel(playlist.isRunning ? "Playing" : "Paused")
+                            }
+                        }
+                        .tag(SidebarSection.playlist(playlist.id))
+                    }
+
+                    Button {
+                        let id = model.createPlaylist()
+                        selectedSection = .playlist(id)
+                    } label: {
+                        Label("New Playlist", systemImage: "plus")
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 Section("Displays") {
                     Label("Display Layout", systemImage: "display.2")
                         .tag(SidebarSection.displays)
@@ -29,10 +54,19 @@ struct LibraryView: View {
             .navigationTitle("Lumae")
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
         } detail: {
-            if selectedSection == .displays {
+            switch selectedSection {
+            case .displays:
                 DisplayLayoutView()
                     .navigationTitle(title)
-            } else {
+
+            case .playlist(let id):
+                PlaylistView(
+                    playlistID: id,
+                    onDelete: { selectedSection = .library }
+                )
+                .navigationTitle(title)
+
+            default:
                 libraryDetail
                     .navigationTitle(title)
                     .toolbar { libraryToolbar }
@@ -157,7 +191,11 @@ struct LibraryView: View {
     }
 
     private var title: String {
-        selectedSection?.title ?? "Library"
+        if case .playlist(let id) = selectedSection,
+           let playlist = model.playlist(id: id) {
+            return playlist.name
+        }
+        return selectedSection?.title ?? "Library"
     }
 
     private var emptyTitle: String {
@@ -228,6 +266,7 @@ enum SidebarSection: Hashable {
     case favorites
     case recent
     case missing
+    case playlist(UUID)
     case displays
 
     var title: String {
@@ -236,6 +275,7 @@ enum SidebarSection: Hashable {
         case .favorites: return "Favorites"
         case .recent: return "Recently Used"
         case .missing: return "Missing Files"
+        case .playlist: return "Playlist"
         case .displays: return "Display Layout"
         }
     }

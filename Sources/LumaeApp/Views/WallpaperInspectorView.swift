@@ -175,6 +175,38 @@ struct WallpaperInspectorView: View {
                 }
                 .help("Open Display Layout for per-monitor assignment and scaling")
             }
+
+            Menu {
+                if model.playlists.isEmpty {
+                    Button("Create New Playlist") {
+                        let id = model.createPlaylist()
+                        model.addWallpaper(wallpaper.id, toPlaylist: id)
+                    }
+                } else {
+                    ForEach(model.playlists) { playlist in
+                        Button {
+                            model.addWallpaper(wallpaper.id, toPlaylist: playlist.id)
+                        } label: {
+                            if playlist.wallpaperIDs.contains(wallpaper.id) {
+                                Label(playlist.name, systemImage: "checkmark")
+                            } else {
+                                Text(playlist.name)
+                            }
+                        }
+                        .disabled(playlist.wallpaperIDs.contains(wallpaper.id))
+                    }
+
+                    Divider()
+
+                    Button("New Playlist with This Wallpaper") {
+                        let id = model.createPlaylist()
+                        model.addWallpaper(wallpaper.id, toPlaylist: id)
+                    }
+                }
+            } label: {
+                Label("Add to Playlist", systemImage: "text.badge.plus")
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 

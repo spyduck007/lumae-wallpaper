@@ -11,6 +11,7 @@
 - Original-file references or optional managed-library copies. Removing a library record does not delete the original.
 - Local metadata and JSON persistence, SHA-256 duplicate detection, thumbnails, cache cleanup, missing-file recovery through Locate File, and graceful media errors.
 - Interactive Display Layout control center with stable display fingerprints, independent wallpaper/scaling/enabled state per monitor, synchronized duplicate mode, and seamless span mode.
+- Named playlists with drag ordering, shuffle, previous/next controls, automatic rotation, custom intervals, relaunch persistence, missing-file skipping, and current-presentation or per-display targets.
 - Independent playback sessions for different per-display videos, plus a shared `AVQueuePlayer` + `AVPlayerLooper` timeline for synchronized duplicate/span playback and one `AVPlayerLayer` per display crop.
 - Fill, Fit, Stretch and Center geometry; negative desktop coordinates, vertical offsets, rotated-size topology and mixed backing scales are represented in the portable core.
 - Non-focusable AppKit wallpaper windows, a crisp custom menu-bar control, close-to-menu-bar lifecycle, settings window, keyboard shortcuts, light/dark appearance and VoiceOver labels.
