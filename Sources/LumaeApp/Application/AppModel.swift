@@ -12,6 +12,7 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var isLoading = false
     @Published var isPaused = false
+    @Published private(set) var displayTopology = DisplayTopology(displays: [])
 
     let store = JSONStateStore()
     let importer = WallpaperImporter()
@@ -107,7 +108,12 @@ final class AppModel: ObservableObject {
         guard let id = PlaylistEngine.nextID(configuration: &playlist, availableIDs: Set(state.wallpapers.map(\.id))) else { return }
         state.settings.playlist = playlist; selectedWallpaperID = id; Task { await applySelected() }
     }
-    func handleTopology(_ topology: DisplayTopology) async { state.lastKnownTopology = topology; await engine.topologyDidChange(topology, state: state); persistSoon() }
+    func handleTopology(_ topology: DisplayTopology) async {
+        displayTopology = topology
+        state.lastKnownTopology = topology
+        await engine.topologyDidChange(topology, state: state)
+        persistSoon()
+    }
     func save() async throws { try await store.save(state) }
     func persistSoon() { Task { try? await save() } }
 }

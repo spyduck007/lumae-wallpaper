@@ -21,14 +21,20 @@ struct LibraryView: View {
             .navigationTitle("Lumae")
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
         } detail: {
-            Group {
-                if selectedSection == .displays { DisplayLayoutView() }
-                else { libraryContent }
+            if selectedSection == .displays {
+                DisplayLayoutView()
+                    .navigationTitle(title)
+            } else {
+                libraryContent
+                    .navigationTitle(title)
+                    .toolbar { libraryToolbar }
+                    .searchable(
+                        text: $model.searchText,
+                        placement: .toolbar,
+                        prompt: "Search wallpapers"
+                    )
             }
-            .navigationTitle(title)
-            .toolbar { toolbar }
         }
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search wallpapers")
         .dropDestination(for: URL.self) { urls, _ in Task { await model.importURLs(urls) }; return true } isTargeted: { isDropTargeted = $0 }
         .overlay { if isDropTargeted { RoundedRectangle(cornerRadius: 16).stroke(.tint, style: StrokeStyle(lineWidth: 3, dash: [8])).padding(16).background(.tint.opacity(0.08)) } }
         .alert("Lumae couldn’t complete that action", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("OK", role: .cancel) {} } message: { Text(model.errorMessage ?? "Unknown error") }
@@ -72,7 +78,7 @@ struct LibraryView: View {
     }
     private var title: String { selectedSection?.title ?? "Library" }
 
-    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+    @ToolbarContentBuilder private var libraryToolbar: some ToolbarContent {
         ToolbarItemGroup {
             Menu {
                 ForEach(LibrarySortOrder.allCases, id: \.self) { order in
