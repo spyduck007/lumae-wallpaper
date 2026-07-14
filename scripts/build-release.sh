@@ -40,6 +40,7 @@ if [[ -n "$IDENTITY" ]]; then
     CODE_SIGNING_REQUIRED=YES
 else
   echo "Building an Xcode-managed ad-hoc Release app for local testing..."
+  echo "Hardened Runtime is disabled only for this ad-hoc build because ad-hoc code has no Team ID for library validation."
   xcodebuild \
     -project Lumae.xcodeproj \
     -scheme Lumae \
@@ -50,7 +51,8 @@ else
     CODE_SIGN_IDENTITY=- \
     DEVELOPMENT_TEAM= \
     CODE_SIGNING_ALLOWED=YES \
-    CODE_SIGNING_REQUIRED=YES
+    CODE_SIGNING_REQUIRED=YES \
+    ENABLE_HARDENED_RUNTIME=NO
 fi
 
 [[ -d "$APP_SOURCE" ]] || {

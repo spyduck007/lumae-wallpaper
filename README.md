@@ -93,7 +93,7 @@ After completing the one-time Sparkle key setup, install the current Release bui
 ./scripts/install-local.sh
 ```
 
-The installer asks Xcode to ad-hoc sign the app and every embedded Sparkle framework/XPC service in dependency order, backs up an existing `/Applications/Lumae.app` under `~/Library/Application Support/Lumae/Install Backups`, installs the new copy, and launches it. It deliberately does not re-sign the finished bundle with `codesign --deep`, which can break Sparkle helpers. Ad-hoc signing is appropriate for your own Mac; public downloads should use Developer ID signing and notarization.
+The installer asks Xcode to ad-hoc sign the app and every embedded Sparkle framework/XPC service in dependency order, disables Hardened Runtime only for that local ad-hoc build because ad-hoc code has no Developer Team ID for library validation, backs up an existing `/Applications/Lumae.app` under `~/Library/Application Support/Lumae/Install Backups`, installs the new copy, and launches it. It deliberately does not re-sign the finished bundle with `codesign --deep`, which can break Sparkle helpers. Public Developer ID builds keep Hardened Runtime enabled and should be notarized.
 
 ## Tests
 

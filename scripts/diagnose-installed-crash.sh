@@ -41,6 +41,14 @@ mkdir -p "$REPORT_DIR"
   codesign -dv --verbose=4 "$APP" 2>&1 || true
   echo
 
+  echo "=== Hardened runtime flag ==="
+  if codesign -dv --verbose=4 "$APP" 2>&1 | grep -q 'flags=.*runtime'; then
+    echo "enabled"
+  else
+    echo "disabled"
+  fi
+  echo
+
   echo "=== Embedded code ==="
   find "$APP/Contents" -maxdepth 5 \
     \( -name '*.framework' -o -name '*.xpc' -o -name '*.app' \) \
