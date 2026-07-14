@@ -36,6 +36,7 @@ struct WallpaperCard: View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .topTrailing) {
                 WallpaperThumbnail(item: item, animate: hovering)
+                    .frame(maxWidth: .infinity)
                     .aspectRatio(16 / 10, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
 
@@ -86,6 +87,7 @@ struct WallpaperCard: View {
                 )
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         .background(
@@ -123,39 +125,51 @@ struct WallpaperThumbnail: View {
     let animate: Bool
 
     var body: some View {
-        Group {
-            if animate, item.kind == .video, !item.isMissing {
-                HoverVideoPreview(url: URL(fileURLWithPath: item.effectiveFilePath))
+        Color.black
+            .overlay {
+                poster
+            }
+            .overlay {
+                if animate, item.kind == .video, !item.isMissing {
+                    HoverVideoPreview(
+                        url: URL(fileURLWithPath: item.effectiveFilePath)
+                    )
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
-            } else if let path = item.thumbnailPath,
-                      let image = NSImage(contentsOfFile: path) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                ZStack {
-                    LinearGradient(
-                        colors: [
-                            .purple.opacity(0.8),
-                            .blue.opacity(0.6),
-                            .pink.opacity(0.5)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-
-                    Image(
-                        systemName: item.isMissing
-                            ? "exclamationmark.triangle"
-                            : "photo"
-                    )
-                    .font(.largeTitle)
-                    .foregroundStyle(.white.opacity(0.85))
+                    .transition(.opacity)
                 }
             }
+            .clipped()
+    }
+
+    @ViewBuilder
+    private var poster: some View {
+        if let path = item.thumbnailPath,
+           let image = NSImage(contentsOfFile: path) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+        } else {
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        .purple.opacity(0.8),
+                        .blue.opacity(0.6),
+                        .pink.opacity(0.5)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                Image(
+                    systemName: item.isMissing
+                        ? "exclamationmark.triangle"
+                        : "photo"
+                )
+                .font(.largeTitle)
+                .foregroundStyle(.white.opacity(0.85))
+            }
         }
-        .background(.black)
     }
 }
 
