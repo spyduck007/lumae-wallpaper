@@ -34,8 +34,25 @@ UPDATES="release/updates"
 ACCOUNT="${SPARKLE_KEY_ACCOUNT:-com.lumae.wallpaper}"
 
 ./scripts/build-release.sh
-./scripts/sign-app.sh build/export/Lumae.app
-./scripts/create-dmg.sh build/export/Lumae.app "$DMG"
+
+BUILT_APP="build/export/Lumae.app"
+BUILT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$BUILT_APP/Contents/Info.plist")"
+BUILT_NUMBER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$BUILT_APP/Contents/Info.plist")"
+
+if [[ "$BUILT_VERSION" != "$VERSION" ]]; then
+  echo "error: requested release $VERSION, but Xcode built $BUILT_VERSION ($BUILT_NUMBER)." >&2
+  echo "The release was not published. Regenerate the project and verify project.yml." >&2
+  exit 1
+fi
+
+[[ "$BUILT_NUMBER" =~ ^[0-9]+$ ]] || {
+  echo "error: built app has invalid build number: $BUILT_NUMBER" >&2
+  exit 1
+}
+
+echo "Verified release bundle: Lumae $BUILT_VERSION ($BUILT_NUMBER)"
+./scripts/sign-app.sh "$BUILT_APP"
+./scripts/create-dmg.sh "$BUILT_APP" "$DMG"
 
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
   ./scripts/notarize-app.sh "$DMG"

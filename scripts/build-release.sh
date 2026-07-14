@@ -9,7 +9,7 @@ command -v xcodebuild >/dev/null || {
   exit 1
 }
 
-[[ -d Lumae.xcodeproj ]] || ./scripts/generate-project.sh
+./scripts/generate-project.sh
 
 DERIVED_DATA="$ROOT/build/ReleaseDerivedData"
 EXPORT_DIR="$ROOT/build/export"
