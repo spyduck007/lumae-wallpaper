@@ -13,7 +13,7 @@
 - Interactive Display Layout control center with stable display fingerprints, independent wallpaper/scaling/enabled state per monitor, synchronized duplicate mode, and seamless span mode.
 - Independent playback sessions for different per-display videos, plus a shared `AVQueuePlayer` + `AVPlayerLooper` timeline for synchronized duplicate/span playback and one `AVPlayerLayer` per display crop.
 - Fill, Fit, Stretch and Center geometry; negative desktop coordinates, vertical offsets, rotated-size topology and mixed backing scales are represented in the portable core.
-- Non-focusable AppKit wallpaper windows, menu bar commands, settings window, keyboard shortcuts, light/dark appearance and VoiceOver labels.
+- Non-focusable AppKit wallpaper windows, a crisp custom menu-bar control, close-to-menu-bar lifecycle, settings window, keyboard shortcuts, light/dark appearance and VoiceOver labels.
 - No accounts, telemetry, ads, analytics, StoreKit, paid APIs, uploaded media or network requests.
 
 ## Architecture
@@ -28,7 +28,7 @@ Sources/
     Resources/               plist, entitlements, generated icon assets
 Tests/LumaeCoreTests/        XCTest coverage for portable logic
 tests/                       Ubuntu-runnable Python geometry parity tests
-scripts/                     generation, build, signing, DMG, notarization
+scripts/                     generation, artwork, build, signing, DMG, notarization
 project.yml                  XcodeGen specification
 Package.swift                portable-core Swift package
 ```
@@ -66,6 +66,10 @@ This repository was created in Ubuntu Linux. The environment did **not** contain
 - Python parity tests execute representative layout mathematics on Ubuntu. XCTest remains the authoritative Swift test suite and must run on a Mac.
 
 No macOS-only check is claimed as passed. See `DEVELOPMENT_STATUS.md`.
+
+## Artwork
+
+The branded macOS app icon and pixel-aligned menu-bar template are stored in the asset catalog. Their committed PNG variants can be regenerated with `python3 scripts/generate-icons.py`; this optional artwork-development command requires Pillow, but normal Xcode builds do not.
 
 ## Build on macOS
 

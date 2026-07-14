@@ -1,15 +1,36 @@
+import AppKit
 import SwiftUI
+
 struct MenuBarView: View {
-    @EnvironmentObject var model: AppModel
-    @EnvironmentObject var updateController: UpdateController
+    @Environment(\.openWindow) private var openWindow
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var updateController: UpdateController
+
     var body: some View {
-        Button(model.isPaused ? "Resume Playback" : "Pause Playback") { model.togglePause() }
-        Button("Next Wallpaper") { model.advancePlaylist() }
+        Button(model.isPaused ? "Resume Playback" : "Pause Playback") {
+            model.togglePause()
+        }
+
+        Button("Next Wallpaper") {
+            model.advancePlaylist()
+        }
+
         Divider()
-        Button("Open Lumae") { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0.title == "Lumae" }?.makeKeyAndOrderFront(nil) }
-        SettingsLink { Text("Settings…") }
+
+        Button("Open Lumae") {
+            MainWindowLifecycle.show(openWindow: openWindow)
+        }
+
+        SettingsLink {
+            Text("Settings…")
+        }
+
         CheckForUpdatesButton(updateController: updateController)
+
         Divider()
-        Button("Quit Lumae") { NSApp.terminate(nil) }
+
+        Button("Quit Lumae") {
+            NSApp.terminate(nil)
+        }
     }
 }
