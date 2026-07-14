@@ -43,8 +43,8 @@ targets:
       - path: Sources/LumaeApp
         excludes:
           - Resources
-    resources:
-      - path: Sources/LumaeApp/Resources
+      - path: Sources/LumaeApp/Resources/Assets.xcassets
+        buildPhase: resources
     dependencies:
       - target: LumaeCore
       - package: Sparkle
