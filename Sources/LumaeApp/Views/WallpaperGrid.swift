@@ -1,5 +1,6 @@
 import SwiftUI
-import AVKit
+import AppKit
+import AVFoundation
 import LumaeCore
 
 struct WallpaperGrid: View {
@@ -118,12 +119,147 @@ struct WallpaperCard: View {
 }
 
 struct WallpaperThumbnail: View {
-    let item: WallpaperMetadata; let animate: Bool
+    let item: WallpaperMetadata
+    let animate: Bool
+
     var body: some View {
         Group {
-            if animate, item.kind == .video, !item.isMissing { VideoPlayer(player: AVPlayer(url: URL(fileURLWithPath: item.effectiveFilePath))).allowsHitTesting(false) }
-            else if let path = item.thumbnailPath, let image = NSImage(contentsOfFile: path) { Image(nsImage: image).resizable().scaledToFill() }
-            else { ZStack { LinearGradient(colors: [.purple.opacity(0.8), .blue.opacity(0.6), .pink.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing); Image(systemName: item.isMissing ? "exclamationmark.triangle" : "photo").font(.largeTitle).foregroundStyle(.white.opacity(0.85)) } }
-        }.background(.black)
+            if animate, item.kind == .video, !item.isMissing {
+                HoverVideoPreview(url: URL(fileURLWithPath: item.effectiveFilePath))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            } else if let path = item.thumbnailPath,
+                      let image = NSImage(contentsOfFile: path) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    LinearGradient(
+                        colors: [
+                            .purple.opacity(0.8),
+                            .blue.opacity(0.6),
+                            .pink.opacity(0.5)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+
+                    Image(
+                        systemName: item.isMissing
+                            ? "exclamationmark.triangle"
+                            : "photo"
+                    )
+                    .font(.largeTitle)
+                    .foregroundStyle(.white.opacity(0.85))
+                }
+            }
+        }
+        .background(.black)
+    }
+}
+
+/// A lightweight AppKit/Core Animation video preview.
+///
+/// SwiftUI's `VideoPlayer` routes through the private `_AVKit_SwiftUI`
+/// framework. On macOS 26.5 Release builds that view can abort while Swift is
+/// initializing its `AVPlayerView` superclass metadata. This preview uses the
+/// public `AVPlayerLayer` API directly and therefore avoids that code path.
+private struct HoverVideoPreview: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> HoverVideoPreviewView {
+        HoverVideoPreviewView(url: url)
+    }
+
+    func updateNSView(_ nsView: HoverVideoPreviewView, context: Context) {
+        nsView.updateURLIfNeeded(url)
+        nsView.play()
+    }
+
+    static func dismantleNSView(
+        _ nsView: HoverVideoPreviewView,
+        coordinator: Void
+    ) {
+        nsView.stop()
+    }
+}
+
+private final class HoverVideoPreviewView: NSView {
+    private let playerLayer = AVPlayerLayer()
+    private var player: AVQueuePlayer?
+    private var looper: AVPlayerLooper?
+    private var currentURL: URL?
+
+    init(url: URL) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.cgColor
+        layer?.masksToBounds = true
+
+        playerLayer.videoGravity = .resizeAspectFill
+        playerLayer.actions = [
+            "bounds": NSNull(),
+            "position": NSNull(),
+            "frame": NSNull()
+        ]
+        layer?.addSublayer(playerLayer)
+
+        configure(url: url)
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        playerLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    func updateURLIfNeeded(_ url: URL) {
+        guard currentURL != url else { return }
+        configure(url: url)
+    }
+
+    func play() {
+        player?.play()
+    }
+
+    func stop() {
+        player?.pause()
+        looper?.disableLooping()
+        looper = nil
+        playerLayer.player = nil
+        player?.removeAllItems()
+        player = nil
+        currentURL = nil
+    }
+
+    private func configure(url: URL) {
+        stop()
+
+        let item = AVPlayerItem(url: url)
+        item.preferredForwardBufferDuration = 1
+
+        let queue = AVQueuePlayer()
+        queue.isMuted = true
+        queue.actionAtItemEnd = .advance
+        queue.automaticallyWaitsToMinimizeStalling = true
+
+        let looper = AVPlayerLooper(player: queue, templateItem: item)
+
+        currentURL = url
+        player = queue
+        self.looper = looper
+        playerLayer.player = queue
+        queue.play()
+    }
+
+    deinit {
+        stop()
     }
 }
