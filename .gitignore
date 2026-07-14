@@ -1,0 +1,47 @@
+# Xcode / Swift
+.DS_Store
+DerivedData/
+.build/
+build/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Generated project and release outputs
+Lumae.xcodeproj/
+release/
+dist/
+*.dmg
+*.app.zip
+*.xcarchive
+
+# XcodeGen / local tools
+.xcodegen-cache/
+.swiftpm/
+Package.resolved
+
+# Signing / notarization / secrets
+*.p12
+*.cer
+*.provisionprofile
+*.mobileprovision
+*.key
+*.pem
+.env
+.env.*
+!.env.example
+notary-profile.json
+
+# Local app data and test artifacts
+.local/
+TestResults/
+*.log
+.coverage
+.pytest_cache/
+__pycache__/

@@ -1,0 +1,86 @@
+name: Lumae
+options:
+  bundleIdPrefix: com.lumae
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: 5.10
+    MACOSX_DEPLOYMENT_TARGET: 14.0
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    CLANG_ENABLE_MODULES: YES
+    SWIFT_STRICT_CONCURRENCY: targeted
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+configs:
+  Debug: debug
+  Release: release
+targets:
+  LumaeCore:
+    type: framework
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources/LumaeCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lumae.wallpaper.core
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+  Lumae:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources/LumaeApp
+        excludes:
+          - Resources
+    resources:
+      - path: Sources/LumaeApp/Resources
+    dependencies:
+      - target: LumaeCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lumae.wallpaper
+        PRODUCT_NAME: Lumae
+        INFOPLIST_FILE: Sources/LumaeApp/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/LumaeApp/Resources/Lumae.entitlements
+        ENABLE_APP_SANDBOX: NO
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.1.0
+    scheme:
+      testTargets:
+        - LumaeCoreTests
+      gatherCoverageData: true
+  LumaeCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Tests/LumaeCoreTests
+    dependencies:
+      - target: LumaeCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lumae.wallpaper.core-tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Lumae:
+    build:
+      targets:
+        Lumae: all
+        LumaeCoreTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - LumaeCoreTests
+    archive:
+      config: Release
