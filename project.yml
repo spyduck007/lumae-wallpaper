@@ -20,6 +20,10 @@ settings:
 configs:
   Debug: debug
   Release: release
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.9.4
 targets:
   LumaeCore:
     type: framework
@@ -44,6 +48,7 @@ targets:
       - path: Sources/LumaeApp/Resources
     dependencies:
       - target: LumaeCore
+      - package: Sparkle
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lumae.wallpaper

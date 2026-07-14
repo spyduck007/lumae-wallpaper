@@ -85,6 +85,16 @@ Command-line debug build:
 xcodebuild -project Lumae.xcodeproj -scheme Lumae -configuration Debug build
 ```
 
+### Install a local test build
+
+After completing the one-time Sparkle key setup, install the current Release build into `/Applications` with:
+
+```bash
+./scripts/install-local.sh
+```
+
+The installer ad-hoc signs the build for local testing, backs up an existing `/Applications/Lumae.app` under `~/Library/Application Support/Lumae/Install Backups`, installs the new copy, and launches it. Ad-hoc signing is appropriate for your own Mac; public downloads should use Developer ID signing and notarization.
+
 ## Tests
 
 Ubuntu-available validation:
@@ -132,13 +142,13 @@ export NOTARY_PROFILE=LumaeNotary
 
 ## Settings and behavior notes
 
-Launch at Login uses `SMAppService.mainApp`, appropriate for modern direct-distribution apps, and reports when System Settings approval is required. Audio is muted by default. Update-check preference is stored, but no updater or network code is included. Playback is paused for screen sleep and inactive login sessions and resumes if previously playing.
+Launch at Login uses `SMAppService.mainApp`, appropriate for modern direct-distribution apps, and reports when System Settings approval is required. Audio is muted by default. Sparkle checks the signed GitHub Releases feed when automatic checks are enabled. Playback is paused for screen sleep and inactive login sessions and resumes if previously playing.
 
 Battery, Low Power Mode, full-screen pause, quality and FPS settings are modeled in the UI/persistence but some policy enforcement remains listed as incomplete. Lumae does not pretend those paths are finished.
 
 ## Privacy
 
-Lumae is local-only. It performs **zero network requests** in this version. Wallpaper files, hashes, thumbnails, settings and metadata remain on the Mac. There is no account, telemetry, tracking, advertising, analytics, cloud database or update service.
+Lumae keeps wallpapers, hashes, thumbnails, settings, and metadata on the Mac. It makes no telemetry, analytics, advertising, account, tracking, cloud-storage, or wallpaper-upload requests. The only network behavior is an optional Sparkle update check against this repository’s GitHub-hosted appcast and release assets.
 
 ## Known limitations
 
@@ -178,3 +188,41 @@ Do not mark these complete until actually tested on macOS:
 - [ ] Launch at Login enable/disable and approval flow.
 - [ ] Build app, ad hoc sign, create/mount/copy/eject DMG, verify Applications shortcut.
 - [ ] Test unsigned/adhoc Gatekeeper expectations and Developer ID notarized flow on a clean Mac user account.
+
+## Secure automatic updates
+
+Lumae uses Sparkle 2 and a signed GitHub Releases appcast. Installed builds check `appcast.xml` from this repository. Update archives are verified with an Ed25519 signature before extraction and replacement. The private signing key remains in the maintainer's macOS Keychain and must never be committed.
+
+One-time updater setup on the release Mac:
+
+```bash
+./scripts/generate-project.sh
+# Build once in Xcode so Swift Package Manager resolves Sparkle.
+./scripts/setup-updater.sh
+./scripts/generate-project.sh
+```
+
+Commit the resulting public-key change. Back up the Sparkle private key securely using Sparkle's `generate_keys -x` command; never add that exported key to this repository.
+
+Updates are published from versioned GitHub Releases, not from arbitrary commits. To prepare and publish a new update:
+
+```bash
+brew install gh
+# First time only:
+gh auth login
+
+./scripts/prepare-update.sh 0.2.0 2
+git add project.yml Lumae.xcodeproj
+# Lumae.xcodeproj is generated and ignored, so normally commit project.yml only.
+git commit -m "Prepare Lumae 0.2.0"
+
+export SPARKLE_KEY_ACCOUNT=com.lumae.wallpaper
+# Optional but strongly recommended for public distribution:
+export DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (TEAMID)'
+export NOTARY_PROFILE=LumaeNotary
+./scripts/publish-release.sh 0.2.0
+```
+
+The publisher builds the app, signs it, creates the DMG, optionally notarizes it, creates a Sparkle-signed appcast entry, pushes the feed and tag, and uploads the DMG to GitHub Releases.
+
+The initial `appcast.xml` is intentionally empty. The current installed version becomes update-capable after `setup-updater.sh` replaces the placeholder public key and the app is rebuilt.

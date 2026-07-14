@@ -25,7 +25,7 @@
 - Frame-rate and quality preferences are persisted but AVFoundation output throttling is not yet enforced.
 - Battery, Low Power Mode and full-screen-app pause preferences are modeled; only sleep/session pause is currently active.
 - Per-display UI assignment editing is architectural/model-ready but the first UI applies one selected item to all displays.
-- Automatic update checks are intentionally not implemented.
+- Sparkle update integration and release scripts are implemented, but the Ed25519 public key must be generated on the release Mac and the complete install/update path must be tested there.
 - Static span uses layered windows rather than replacing macOS desktop pictures; behavior must be verified per macOS release.
 
 ## Suggested next steps

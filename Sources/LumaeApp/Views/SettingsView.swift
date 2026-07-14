@@ -4,11 +4,12 @@ import LumaeCore
 
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var updateController: UpdateController
     @State private var tab = SettingsTab.general
 
     var body: some View {
         TabView(selection: $tab) {
-            GeneralSettingsPane()
+            GeneralSettingsPane(updateController: updateController)
                 .tabItem { Label("General", systemImage: "gearshape") }
                 .tag(SettingsTab.general)
 
@@ -33,6 +34,7 @@ enum SettingsTab {
 
 private struct GeneralSettingsPane: View {
     @EnvironmentObject var model: AppModel
+    @ObservedObject var updateController: UpdateController
 
     var body: some View {
         SettingsPane {
@@ -81,6 +83,10 @@ private struct GeneralSettingsPane: View {
                 )
             }
 
+            SettingsSection(title: "Updates", description: "Updates are fetched from signed GitHub Releases and verified before installation.") {
+                UpdaterSettingsRows(updateController: updateController)
+            }
+
             SettingsSection(title: "Status") {
                 SettingsValueRow(
                     title: "Launch at login",
@@ -90,7 +96,7 @@ private struct GeneralSettingsPane: View {
             }
 
             SettingsFootnote(
-                "Lumae makes no network requests. The update-check preference is stored for future use, but this version does not include an updater."
+                "Lumae only contacts GitHub when checking for updates. Wallpaper files, metadata, and diagnostic information remain on your Mac."
             )
         }
     }
@@ -368,7 +374,7 @@ private struct SettingsSection<Content: View>: View {
     }
 }
 
-private struct SettingsToggleRow: View {
+struct SettingsToggleRow: View {
     let title: String
     let detail: String?
     @Binding var isOn: Bool
@@ -410,7 +416,7 @@ private struct SettingsPickerRow<Accessory: View>: View {
     }
 }
 
-private struct SettingsValueRow: View {
+struct SettingsValueRow: View {
     let title: String
     let detail: String?
     let value: String
@@ -432,7 +438,7 @@ private struct SettingsValueRow: View {
     }
 }
 
-private struct SettingsActionRow: View {
+struct SettingsActionRow: View {
     let title: String
     let detail: String?
     let buttonTitle: String
@@ -485,7 +491,7 @@ private struct SettingsBaseRow<Accessory: View>: View {
     }
 }
 
-private struct SettingsDivider: View {
+struct SettingsDivider: View {
     var body: some View {
         Divider()
             .padding(.leading, 16)

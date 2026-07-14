@@ -45,3 +45,5 @@ TestResults/
 .coverage
 .pytest_cache/
 __pycache__/
+
+.tmp-sparkle/
