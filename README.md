@@ -10,8 +10,8 @@
 - JPG, JPEG, PNG, HEIC, TIFF, GIF, MP4, MOV and M4V recognition. GIF currently uses its first frame for the desktop surface.
 - Original-file references or optional managed-library copies. Removing a library record does not delete the original.
 - Local metadata and JSON persistence, SHA-256 duplicate detection, thumbnails, cache cleanup and graceful unsupported/missing-file errors.
-- Per-display architecture with stable display fingerprints, duplicate mode and span mode.
-- Shared `AVQueuePlayer` + `AVPlayerLooper` timeline for synchronized duplicate/span playback and one `AVPlayerLayer` per display crop.
+- Interactive Display Layout control center with stable display fingerprints, independent wallpaper/scaling/enabled state per monitor, synchronized duplicate mode, and seamless span mode.
+- Independent playback sessions for different per-display videos, plus a shared `AVQueuePlayer` + `AVPlayerLooper` timeline for synchronized duplicate/span playback and one `AVPlayerLayer` per display crop.
 - Fill, Fit, Stretch and Center geometry; negative desktop coordinates, vertical offsets, rotated-size topology and mixed backing scales are represented in the portable core.
 - Non-focusable AppKit wallpaper windows, menu bar commands, settings window, keyboard shortcuts, light/dark appearance and VoiceOver labels.
 - No accounts, telemetry, ads, analytics, StoreKit, paid APIs, uploaded media or network requests.
@@ -43,7 +43,7 @@ Lumae creates one borderless, mouse-ignoring, non-key `NSWindow` per active disp
 
 A video assignment creates one `AVQueuePlayer` and one `AVPlayerLooper`. All display layers reference that same player, so they share decode, clock, queue transition and loop boundary. Lumae does not seek independent players or recreate windows on every loop. `AVPlayerLooper` prequeues the template item, avoiding the normal end-of-item black frame. Hardware decode is selected by AVFoundation when supported by the codec and hardware.
 
-For independent per-display videos, the architecture permits separate playback sessions; synchronized duplicate and span modes intentionally share one session. Changing wallpaper tears down the looper, removes items and releases layers/windows to prevent hidden-player accumulation.
+Independent per-display videos use separate playback sessions so each monitor can show different content and scaling. Synchronized duplicate and span modes intentionally share one session. Changing presentation or assignments tears down old loopers, removes items, and releases layers/windows to prevent hidden-player accumulation.
 
 ### Span-mode calculations
 

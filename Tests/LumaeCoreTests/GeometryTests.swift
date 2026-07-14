@@ -7,4 +7,17 @@ final class GeometryTests: XCTestCase {
     func testFillAndFit() { let dst=LRect(x:0,y:0,width:1920,height:1080); XCTAssertEqual(GeometryEngine.placement(source:.init(width:1000,height:1000),destination:dst,mode:.fill).frame.size.height,1920,accuracy:0.001); XCTAssertEqual(GeometryEngine.placement(source:.init(width:1000,height:1000),destination:dst,mode:.fit).frame.size.width,1080,accuracy:0.001) }
     func testPortraitLandscapeMixedScale() throws { let t=DisplayTopology(displays:[d("portrait",-1080,0,1080,1920),d("retina",0,240,1512,982,2)]); let l=try SpanLayoutEngine.makeLayout(topology:t,sourceSize:.init(width:5000,height:3000),mode:.fill); XCTAssertLessThanOrEqual(SpanLayoutEngine.maximumBoundaryErrorInPixels(l),1) }
     func testAssignmentRestoration() { let old=DisplayFingerprint(stableID:"old",vendorID:1,modelID:2,serialNumber:3,localizedName:"Panel"); let new=DisplayFingerprint(stableID:"new",vendorID:1,modelID:2,serialNumber:3,localizedName:"Panel"); let t=DisplayTopology(displays:[DisplayDescriptor(fingerprint:new,framePoints:.init(x:0,y:0,width:100,height:100),visibleFramePoints:.init(x:0,y:0,width:100,height:100),pixelSize:.init(width:100,height:100),backingScaleFactor:1)]); XCTAssertNotNil(DisplayAssignmentRestorer.restore(saved:[.init(displayFingerprint:old)],onto:t)["new"]) }
+    func testAssignmentRestorationKeepsIndependentSettings() {
+        let wallpaperID = UUID()
+        let old = DisplayFingerprint(stableID:"old",vendorID:10,modelID:20,serialNumber:30,localizedName:"Studio")
+        let new = DisplayFingerprint(stableID:"new",vendorID:10,modelID:20,serialNumber:30,localizedName:"Studio")
+        let assignment = DisplayAssignment(displayFingerprint:old,wallpaperID:wallpaperID,enabled:false,scalingMode:.fit,maxFrameRate:24,videoQuality:.efficiency)
+        let topology = DisplayTopology(displays:[DisplayDescriptor(fingerprint:new,framePoints:.init(x:0,y:0,width:1920,height:1080),visibleFramePoints:.init(x:0,y:0,width:1920,height:1080),pixelSize:.init(width:1920,height:1080),backingScaleFactor:1)])
+        let restored = DisplayAssignmentRestorer.restore(saved:[assignment],onto:topology)["new"]
+        XCTAssertEqual(restored?.wallpaperID, wallpaperID)
+        XCTAssertEqual(restored?.enabled, false)
+        XCTAssertEqual(restored?.scalingMode, .fit)
+        XCTAssertEqual(restored?.maxFrameRate, 24)
+        XCTAssertEqual(restored?.videoQuality, .efficiency)
+    }
 }
