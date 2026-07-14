@@ -74,9 +74,38 @@ struct LibraryView: View {
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItemGroup {
-            Picker("Sort", selection: $model.sortOrder) { ForEach(LibrarySortOrder.allCases, id: \.self) { Text($0.label).tag($0) } }.labelsHidden().frame(width: 150)
-            Picker("View", selection: $model.viewMode) { Label("Grid", systemImage: "square.grid.2x2").tag(LibraryViewMode.grid); Label("List", systemImage: "list.bullet").tag(LibraryViewMode.list) }.pickerStyle(.segmented).labelsHidden().frame(width: 80)
-            Button { model.presentImporter() } label: { Label("Import", systemImage: "plus") }
+            Menu {
+                ForEach(LibrarySortOrder.allCases, id: \.self) { order in
+                    Button {
+                        model.sortOrder = order
+                    } label: {
+                        if model.sortOrder == order {
+                            Label(order.label, systemImage: "checkmark")
+                        } else {
+                            Text(order.label)
+                        }
+                    }
+                }
+            } label: {
+                Label(model.sortOrder.label, systemImage: "arrow.up.arrow.down")
+            }
+            .help("Sort wallpapers")
+
+            Picker("View", selection: $model.viewMode) {
+                Label("Grid", systemImage: "square.grid.2x2")
+                    .tag(LibraryViewMode.grid)
+                Label("List", systemImage: "list.bullet")
+                    .tag(LibraryViewMode.list)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 82)
+            .help("Change library view")
+
+            Button { model.presentImporter() } label: {
+                Label("Import Wallpapers", systemImage: "plus")
+            }
+            .help("Import wallpapers")
         }
     }
 }
