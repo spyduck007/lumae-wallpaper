@@ -1,0 +1,286 @@
+import AppKit
+import SwiftUI
+import LumaeCore
+
+struct WallpaperInspectorView: View {
+    @EnvironmentObject private var model: AppModel
+
+    let wallpaper: WallpaperMetadata
+    let openDisplayLayout: () -> Void
+
+    @State private var confirmRemoval = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                preview
+                primaryActions
+                metadataSection
+                fileSection
+                destructiveSection
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.52))
+        .confirmationDialog(
+            "Remove “\(wallpaper.name)” from Lumae?",
+            isPresented: $confirmRemoval,
+            titleVisibility: .visible
+        ) {
+            Button("Remove from Lumae", role: .destructive) {
+                model.remove(wallpaper)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The original media file will not be deleted.")
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: wallpaper.kind == .video ? "play.rectangle" : "photo")
+                .font(.title2)
+                .foregroundStyle(.tint)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(wallpaper.name)
+                    .font(.title3.bold())
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+
+                HStack(spacing: 7) {
+                    statusBadge
+                    Text(wallpaper.format.rawValue.uppercased())
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            Button {
+                model.selectedWallpaperID = nil
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .help("Close inspector")
+            .accessibilityLabel("Close wallpaper inspector")
+        }
+    }
+
+    private var preview: some View {
+        ZStack(alignment: .topTrailing) {
+            WallpaperThumbnail(item: wallpaper, animate: false)
+                .aspectRatio(16 / 10, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            if wallpaper.kind == .video {
+                Label("Video", systemImage: "play.fill")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(9)
+            }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    private var primaryActions: some View {
+        VStack(spacing: 10) {
+            Button {
+                Task { await model.apply(wallpaper) }
+            } label: {
+                Label("Apply Wallpaper", systemImage: "checkmark.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(wallpaper.isMissing)
+
+            HStack(spacing: 10) {
+                Button {
+                    model.toggleFavorite(wallpaper)
+                } label: {
+                    Label(
+                        wallpaper.isFavorite ? "Unfavorite" : "Favorite",
+                        systemImage: wallpaper.isFavorite ? "star.slash" : "star"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+
+                Button(action: openDisplayLayout) {
+                    Label("Displays", systemImage: "display.2")
+                        .frame(maxWidth: .infinity)
+                }
+                .help("Open Display Layout for per-monitor assignment and scaling")
+            }
+        }
+    }
+
+    private var metadataSection: some View {
+        InspectorSection(title: "Details") {
+            InspectorValueRow(title: "Dimensions", value: "\(wallpaper.pixelWidth) × \(wallpaper.pixelHeight)")
+            InspectorValueRow(title: "File size", value: byteCountFormatter.string(fromByteCount: wallpaper.fileSizeBytes))
+
+            if let duration = wallpaper.durationSeconds {
+                InspectorValueRow(title: "Duration", value: durationFormatter(duration))
+            }
+
+            if let frameRate = wallpaper.frameRate, frameRate > 0 {
+                InspectorValueRow(title: "Frame rate", value: String(format: "%.1f fps", frameRate))
+            }
+
+            InspectorValueRow(title: "Added", value: wallpaper.dateAdded.formatted(date: .abbreviated, time: .shortened))
+
+            if let lastUsed = wallpaper.dateLastUsed {
+                InspectorValueRow(title: "Last used", value: lastUsed.formatted(date: .abbreviated, time: .shortened))
+            }
+        }
+    }
+
+    private var fileSection: some View {
+        InspectorSection(title: "File") {
+            Text(wallpaper.effectiveFilePath)
+                .font(.caption.monospaced())
+                .foregroundStyle(wallpaper.isMissing ? .red : .secondary)
+                .textSelection(.enabled)
+                .lineLimit(4)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if wallpaper.isMissing {
+                Label(
+                    "Lumae remembers this wallpaper, but the media file is no longer available at its saved location.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    model.presentRelink(for: wallpaper)
+                } label: {
+                    Label("Locate File…", systemImage: "folder.badge.questionmark")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                HStack(spacing: 10) {
+                    Button {
+                        model.revealInFinder(wallpaper)
+                    } label: {
+                        Label("Reveal", systemImage: "folder")
+                            .frame(maxWidth: .infinity)
+                    }
+
+                    Button {
+                        model.copyPath(wallpaper)
+                    } label: {
+                        Label("Copy Path", systemImage: "doc.on.doc")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+    }
+
+    private var destructiveSection: some View {
+        InspectorSection(title: "Library") {
+            Button(role: .destructive) {
+                confirmRemoval = true
+            } label: {
+                Label("Remove from Lumae", systemImage: "trash")
+                    .frame(maxWidth: .infinity)
+            }
+
+            Text("This removes only the library entry. Lumae never deletes the original media file.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var statusBadge: some View {
+        if wallpaper.isMissing {
+            Label("Missing", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption2.bold())
+                .foregroundStyle(.red)
+        } else {
+            Label("Ready", systemImage: "checkmark.circle.fill")
+                .font(.caption2.bold())
+                .foregroundStyle(.green)
+        }
+    }
+
+    private var byteCountFormatter: ByteCountFormatter {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        return formatter
+    }
+
+    private func durationFormatter(_ duration: Double) -> String {
+        let totalSeconds = max(Int(duration.rounded()), 0)
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return minutes > 0
+            ? String(format: "%d:%02d", minutes, seconds)
+            : "\(seconds) sec"
+    }
+}
+
+private struct InspectorSection<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            content
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(nsColor: .windowBackgroundColor).opacity(0.72),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+        }
+    }
+}
+
+private struct InspectorValueRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+        }
+        .font(.callout)
+    }
+}

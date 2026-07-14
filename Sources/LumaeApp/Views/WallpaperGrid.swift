@@ -108,12 +108,40 @@ struct WallpaperCard: View {
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.15), value: hovering)
         .contextMenu {
-            Button("Apply") { Task { await model.apply(item) } }
+            Button("Open Inspector") {
+                model.selectedWallpaperID = item.id
+            }
+
+            Button("Apply Wallpaper") {
+                Task { await model.apply(item) }
+            }
+            .disabled(item.isMissing)
+
             Button(item.isFavorite ? "Unfavorite" : "Favorite") {
                 model.toggleFavorite(item)
             }
+
             Divider()
-            Button("Remove from Lumae", role: .destructive) { model.remove(item) }
+
+            if item.isMissing {
+                Button("Locate File…") {
+                    model.presentRelink(for: item)
+                }
+            } else {
+                Button("Reveal in Finder") {
+                    model.revealInFinder(item)
+                }
+            }
+
+            Button("Copy File Path") {
+                model.copyPath(item)
+            }
+
+            Divider()
+
+            Button("Remove from Lumae", role: .destructive) {
+                model.remove(item)
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(item.name), \(item.kind.rawValue) wallpaper")

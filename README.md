@@ -6,10 +6,10 @@
 
 ## Features
 
-- Native sidebar library with responsive grid/list views, search, sorting, favorites, recent items, missing-file status, drag/drop and file-picker import.
+- Native sidebar library with responsive grid/list views, search, sorting, favorites, recent items, drag/drop import, and a selection inspector for preview, metadata, apply, Finder, and library actions.
 - JPG, JPEG, PNG, HEIC, TIFF, GIF, MP4, MOV and M4V recognition. GIF currently uses its first frame for the desktop surface.
 - Original-file references or optional managed-library copies. Removing a library record does not delete the original.
-- Local metadata and JSON persistence, SHA-256 duplicate detection, thumbnails, cache cleanup and graceful unsupported/missing-file errors.
+- Local metadata and JSON persistence, SHA-256 duplicate detection, thumbnails, cache cleanup, missing-file recovery through Locate File, and graceful media errors.
 - Interactive Display Layout control center with stable display fingerprints, independent wallpaper/scaling/enabled state per monitor, synchronized duplicate mode, and seamless span mode.
 - Independent playback sessions for different per-display videos, plus a shared `AVQueuePlayer` + `AVPlayerLooper` timeline for synchronized duplicate/span playback and one `AVPlayerLayer` per display crop.
 - Fill, Fit, Stretch and Center geometry; negative desktop coordinates, vertical offsets, rotated-size topology and mixed backing scales are represented in the portable core.

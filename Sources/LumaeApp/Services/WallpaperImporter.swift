@@ -28,6 +28,45 @@ actor WallpaperImporter {
         return result
     }
 
+
+    func relink(
+        _ wallpaper: WallpaperMetadata,
+        to source: URL,
+        existing: [WallpaperMetadata],
+        thumbnailCache: ThumbnailCache
+    ) async throws -> WallpaperMetadata {
+        guard let format = SupportedWallpaperFormat.from(pathExtension: source.pathExtension) else {
+            throw ImportError.unsupported(source.lastPathComponent)
+        }
+
+        let hash = try hashFile(source)
+        if existing.contains(where: { $0.id != wallpaper.id && $0.contentHash == hash }) {
+            throw ImportError.duplicate(source.lastPathComponent)
+        }
+
+        let values = try source.resourceValues(forKeys: [.fileSizeKey])
+        let dimensions = try await mediaDimensions(source, kind: format.kind)
+        let thumbnail = try await thumbnailCache.thumbnail(
+            for: source,
+            kind: format.kind,
+            hash: hash
+        )
+
+        var updated = wallpaper
+        updated.originalFilePath = source.path
+        updated.managedLibraryPath = nil
+        updated.format = format
+        updated.fileSizeBytes = Int64(values.fileSize ?? 0)
+        updated.pixelWidth = dimensions.width
+        updated.pixelHeight = dimensions.height
+        updated.durationSeconds = dimensions.duration
+        updated.frameRate = dimensions.frameRate
+        updated.thumbnailPath = thumbnail.path
+        updated.isMissing = false
+        updated.contentHash = hash
+        return updated
+    }
+
     private func managedURL(for source: URL, behavior: ImportBehavior, explicitPath: String?) throws -> URL {
         guard behavior == .copyToManagedLibrary else { return source }
         let root = explicitPath.map(URL.init(fileURLWithPath:)) ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Lumae/Library", isDirectory: true)
@@ -55,6 +94,15 @@ actor WallpaperImporter {
 }
 
 enum ImportError: LocalizedError {
-    case unsupported(String), unreadable(String)
-    var errorDescription: String? { switch self { case .unsupported(let n): return "\(n) uses an unsupported format."; case .unreadable(let n): return "Lumae could not read media metadata from \(n)." } }
+    case unsupported(String), unreadable(String), duplicate(String)
+    var errorDescription: String? {
+        switch self {
+        case .unsupported(let name):
+            return "\(name) uses an unsupported format."
+        case .unreadable(let name):
+            return "Lumae could not read media metadata from \(name)."
+        case .duplicate(let name):
+            return "\(name) is already in your Lumae library."
+        }
+    }
 }

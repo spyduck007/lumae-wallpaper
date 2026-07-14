@@ -111,6 +111,9 @@ final class AppModel: ObservableObject {
 
     func remove(_ wallpaper: WallpaperMetadata) {
         state.wallpapers.removeAll { $0.id == wallpaper.id }
+        if selectedWallpaperID == wallpaper.id {
+            selectedWallpaperID = nil
+        }
         state.assignments = state.assignments.map {
             var copy = $0
             if copy.wallpaperID == wallpaper.id {
@@ -122,6 +125,65 @@ final class AppModel: ObservableObject {
             state.sharedWallpaperID = nil
         }
         scheduleConfigurationApply()
+    }
+
+
+    func revealInFinder(_ wallpaper: WallpaperMetadata) {
+        let url = URL(fileURLWithPath: wallpaper.effectiveFilePath)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            errorMessage = "The wallpaper file is missing. Use Locate File… to reconnect it."
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func copyPath(_ wallpaper: WallpaperMetadata) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(
+            wallpaper.effectiveFilePath,
+            forType: .string
+        )
+    }
+
+    func presentRelink(for wallpaper: WallpaperMetadata) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = WallpaperImporter.allowedTypes
+        panel.prompt = "Relink"
+        panel.message = "Choose the file that should replace the missing wallpaper reference."
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                await self?.relink(wallpaper, to: url)
+            }
+        }
+    }
+
+    func relink(_ wallpaper: WallpaperMetadata, to url: URL) async {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let updated = try await importer.relink(
+                wallpaper,
+                to: url,
+                existing: state.wallpapers,
+                thumbnailCache: cache
+            )
+            guard let index = state.wallpapers.firstIndex(where: { $0.id == wallpaper.id }) else {
+                return
+            }
+            state.wallpapers[index] = updated
+            selectedWallpaperID = updated.id
+            try await save()
+            try await engine.applyConfiguration(
+                state: state,
+                topology: displayTopology
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func toggleFavorite(_ wallpaper: WallpaperMetadata) {
