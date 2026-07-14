@@ -1,11 +1,19 @@
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0"
-    xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
-    xmlns:dc="http://purl.org/dc/elements/1.1/">
+<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
-        <title>Lumae Updates</title>
-        <link>https://github.com/spyduck007/lumae-wallpaper/releases</link>
-        <description>Signed application updates for Lumae.</description>
-        <language>en</language>
+        <title>Lumae</title>
+        <item>
+            <title>0.1.1</title>
+            <pubDate>Tue, 14 Jul 2026 13:02:17 -0400</pubDate>
+            <link>https://github.com/spyduck007/lumae-wallpaper</link>
+            <sparkle:version>2</sparkle:version>
+            <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/spyduck007/lumae-wallpaper/releases/download/v0.1.1/Lumae-0.1.1.dmg" length="1523883" type="application/octet-stream" sparkle:edSignature="7esxuU7TGtOOGFMdgOXBMJSvUR5Dx6U8QIYgtJN0WzLztYTm1cYWDq1N/p0Jxr0lDQAunvgVq3IuMPpeEneKAQ=="></enclosure>
+        </item>
     </channel>
-</rss>
+</rss><!-- sparkle-signatures:
+edSignature: WawEER/dvAA0DRSa948IuKiOw5k0taL+/kQ8OlaKr8aHfO1+uH8tvG+UsVFlcfK/21NUpv6GN3oyTC9erJ3kBw==
+length: 1115
+-->
