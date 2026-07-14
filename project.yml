@@ -26,16 +26,14 @@ packages:
     exactVersion: 2.9.4
 targets:
   LumaeCore:
-    type: framework
+    type: library.static
     platform: macOS
     deploymentTarget: "14.0"
     sources:
       - path: Sources/LumaeCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.lumae.wallpaper.core
         DEFINES_MODULE: YES
-        GENERATE_INFOPLIST_FILE: YES
   Lumae:
     type: application
     platform: macOS

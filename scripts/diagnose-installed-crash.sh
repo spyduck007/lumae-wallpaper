@@ -47,6 +47,16 @@ mkdir -p "$REPORT_DIR"
     -print | sort
   echo
 
+  echo "=== Embedded Team IDs ==="
+  while IFS= read -r code_path; do
+    echo "-- $code_path"
+    codesign -dv --verbose=2 "$code_path" 2>&1 \
+      | grep -E '^(Identifier|TeamIdentifier|Authority)=' || true
+  done < <(find "$APP/Contents" -maxdepth 5 \
+    \( -name '*.framework' -o -name '*.xpc' -o -name '*.app' \) \
+    -print | sort)
+  echo
+
   echo "=== Gatekeeper assessment ==="
   spctl --assess --type execute --verbose=4 "$APP" 2>&1 || true
   echo

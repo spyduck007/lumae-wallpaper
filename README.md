@@ -33,7 +33,7 @@ project.yml                  XcodeGen specification
 Package.swift                portable-core Swift package
 ```
 
-`LumaeCore` contains no AppKit types. Display rectangles use logical macOS points plus explicit backing scale and pixel dimensions. Platform services translate `NSScreen`/Core Graphics data into those models.
+`LumaeCore` contains no AppKit types and is linked into the app as a static library. This avoids a separate embedded-framework signing boundary while keeping the source architecture and Swift module separation intact. Display rectangles use logical macOS points plus explicit backing scale and pixel dimensions. Platform services translate `NSScreen`/Core Graphics data into those models.
 
 ### Wallpaper surfaces
 
@@ -163,7 +163,7 @@ Lumae keeps wallpapers, hashes, thumbnails, settings, and metadata on the Mac. I
 
 ## Troubleshooting
 
-- **Installed build crashes but Xcode build works:** rebuild and reinstall with `./scripts/install-local.sh`. Release builds are signed by Xcode so Sparkle's nested helpers receive valid signatures. If it still crashes, run `./scripts/diagnose-installed-crash.sh` and inspect or share the text file created under `~/Desktop/Lumae Diagnostics`.
+- **Installed build crashes but Xcode build works:** rebuild and reinstall with `./scripts/install-local.sh`. `LumaeCore` is statically linked so it cannot acquire a different Team ID from the app, while Xcode signs Sparkle's nested helpers in dependency order. If it still crashes, run `./scripts/diagnose-installed-crash.sh` and inspect or share the text file created under `~/Desktop/Lumae Diagnostics`.
 - **XcodeGen missing:** `brew install xcodegen`, then regenerate.
 - **Wallpaper is above icons:** quit Lumae, capture macOS version/Space/Stage Manager state, and inspect desktop-level behavior; do not raise/lower with arbitrary constants.
 - **Video black or unsupported:** test the file in QuickTime Player; transcode to H.264 or HEVC in MP4/MOV.
