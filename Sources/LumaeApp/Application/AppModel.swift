@@ -18,6 +18,7 @@ final class AppModel: ObservableObject {
     let displayService = DisplayDiscoveryService()
     let engine = WallpaperEngine()
     let cache = ThumbnailCache()
+    let launchAtLogin = LaunchAtLoginService()
 
     var filteredWallpapers: [WallpaperMetadata] {
         let filter = LibraryFilter(query: searchText)
