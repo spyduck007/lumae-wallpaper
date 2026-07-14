@@ -13,7 +13,7 @@ struct LumaeApp: App {
         }
         .commands { LumaeCommands(model: model) }
         Settings { SettingsView().environmentObject(model).frame(width: 680, height: 560) }
-        MenuBarExtra("Lumae", systemImage: "sparkles.rectangle.stack", isInserted: $model.isMenuBarVisible) {
+        MenuBarExtra("Lumae", systemImage: "sparkles.rectangle.stack") {
             MenuBarView().environmentObject(model)
         }
     }

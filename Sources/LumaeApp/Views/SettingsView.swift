@@ -9,7 +9,7 @@ struct SettingsView: View {
             Form {
                 Toggle("Launch Lumae at login", isOn: Binding(get: { model.state.settings.launchAtLogin }, set: { value in model.state.settings.launchAtLogin = value; try? model.launchAtLogin.setEnabled(value); model.persistSoon() }))
                 Toggle("Restore last wallpaper configuration", isOn: $model.state.settings.restoreLastConfiguration)
-                Toggle("Show menu bar control", isOn: $model.isMenuBarVisible)
+                LabeledContent("Menu bar control", value: "Always shown in this preview build")
                 Toggle("Enable diagnostic logging", isOn: $model.state.settings.diagnosticLoggingEnabled)
                 LabeledContent("Launch status", value: model.launchAtLogin.statusDescription)
                 Text("Lumae makes no network requests. Update checks are only a stored preference in this version; no updater is included.").font(.caption).foregroundStyle(.secondary)
