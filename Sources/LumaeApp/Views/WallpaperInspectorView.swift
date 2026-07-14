@@ -9,6 +9,9 @@ struct WallpaperInspectorView: View {
     let openDisplayLayout: () -> Void
 
     @State private var confirmRemoval = false
+    @State private var isRenaming = false
+    @State private var draftName = ""
+    @FocusState private var nameFieldFocused: Bool
 
     var body: some View {
         ScrollView {
@@ -24,6 +27,18 @@ struct WallpaperInspectorView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.52))
+        .onAppear {
+            draftName = wallpaper.name
+        }
+        .onChange(of: wallpaper.id) { _, _ in
+            isRenaming = false
+            draftName = wallpaper.name
+        }
+        .onChange(of: wallpaper.name) { _, newName in
+            if !isRenaming {
+                draftName = newName
+            }
+        }
         .confirmationDialog(
             "Remove “\(wallpaper.name)” from Lumae?",
             isPresented: $confirmRemoval,
@@ -45,11 +60,19 @@ struct WallpaperInspectorView: View {
                 .foregroundStyle(.tint)
                 .frame(width: 28)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(wallpaper.name)
-                    .font(.title3.bold())
-                    .lineLimit(2)
-                    .truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 6) {
+                if isRenaming {
+                    TextField("Wallpaper name", text: $draftName)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($nameFieldFocused)
+                        .onSubmit(commitRename)
+                        .accessibilityLabel("Wallpaper name")
+                } else {
+                    Text(wallpaper.name)
+                        .font(.title3.bold())
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                }
 
                 HStack(spacing: 7) {
                     statusBadge
@@ -59,16 +82,46 @@ struct WallpaperInspectorView: View {
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            Button {
-                model.selectedWallpaperID = nil
-            } label: {
-                Image(systemName: "xmark")
+            if isRenaming {
+                HStack(spacing: 6) {
+                    Button(action: cancelRename) {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Cancel rename")
+                    .accessibilityLabel("Cancel rename")
+
+                    Button(action: commitRename) {
+                        Image(systemName: "checkmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Save wallpaper name")
+                    .accessibilityLabel("Save wallpaper name")
+                    .disabled(
+                        draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                }
+            } else {
+                HStack(spacing: 6) {
+                    Button(action: beginRename) {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Rename wallpaper")
+                    .accessibilityLabel("Rename wallpaper")
+
+                    Button {
+                        model.selectedWallpaperID = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Close inspector")
+                    .accessibilityLabel("Close wallpaper inspector")
+                }
             }
-            .buttonStyle(.borderless)
-            .help("Close inspector")
-            .accessibilityLabel("Close wallpaper inspector")
         }
     }
 
@@ -219,6 +272,28 @@ struct WallpaperInspectorView: View {
                 .font(.caption2.bold())
                 .foregroundStyle(.green)
         }
+    }
+
+
+    private func beginRename() {
+        draftName = wallpaper.name
+        isRenaming = true
+        DispatchQueue.main.async {
+            nameFieldFocused = true
+        }
+    }
+
+    private func cancelRename() {
+        draftName = wallpaper.name
+        isRenaming = false
+        nameFieldFocused = false
+    }
+
+    private func commitRename() {
+        guard model.rename(wallpaper, to: draftName) else { return }
+        draftName = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+        isRenaming = false
+        nameFieldFocused = false
     }
 
     private var byteCountFormatter: ByteCountFormatter {

@@ -186,6 +186,26 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func rename(_ wallpaper: WallpaperMetadata, to proposedName: String) -> Bool {
+        let trimmedName = proposedName.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !trimmedName.isEmpty else {
+            errorMessage = "Wallpaper names cannot be empty."
+            return false
+        }
+        guard let index = state.wallpapers.firstIndex(where: { $0.id == wallpaper.id }) else {
+            return false
+        }
+        guard state.wallpapers[index].name != trimmedName else {
+            return true
+        }
+
+        state.wallpapers[index].name = trimmedName
+        persistSoon()
+        return true
+    }
+
     func toggleFavorite(_ wallpaper: WallpaperMetadata) {
         guard let index = state.wallpapers.firstIndex(where: { $0.id == wallpaper.id }) else {
             return

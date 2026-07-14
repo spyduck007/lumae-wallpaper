@@ -6,7 +6,7 @@
 
 ## Features
 
-- Native sidebar library with responsive grid/list views, search, sorting, favorites, recent items, drag/drop import, and a selection inspector for preview, metadata, apply, Finder, and library actions.
+- Native sidebar library with responsive grid/list views, search, sorting, favorites, recent items, drag/drop import, and a selection inspector for preview, rename, metadata, apply, Finder, and library actions.
 - JPG, JPEG, PNG, HEIC, TIFF, GIF, MP4, MOV and M4V recognition. GIF currently uses its first frame for the desktop surface.
 - Original-file references or optional managed-library copies. Removing a library record does not delete the original.
 - Local metadata and JSON persistence, SHA-256 duplicate detection, thumbnails, cache cleanup, missing-file recovery through Locate File, and graceful media errors.
