@@ -93,7 +93,7 @@ After completing the one-time Sparkle key setup, install the current Release bui
 ./scripts/install-local.sh
 ```
 
-The installer ad-hoc signs the build for local testing, backs up an existing `/Applications/Lumae.app` under `~/Library/Application Support/Lumae/Install Backups`, installs the new copy, and launches it. Ad-hoc signing is appropriate for your own Mac; public downloads should use Developer ID signing and notarization.
+The installer asks Xcode to ad-hoc sign the app and every embedded Sparkle framework/XPC service in dependency order, backs up an existing `/Applications/Lumae.app` under `~/Library/Application Support/Lumae/Install Backups`, installs the new copy, and launches it. It deliberately does not re-sign the finished bundle with `codesign --deep`, which can break Sparkle helpers. Ad-hoc signing is appropriate for your own Mac; public downloads should use Developer ID signing and notarization.
 
 ## Tests
 
@@ -120,6 +120,8 @@ The DMG contains `Lumae.app` and an `/Applications` shortcut with a minimal drag
 
 ```bash
 export DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (TEAMID)'
+export DEVELOPMENT_TEAM='TEAMID'
+./scripts/build-release.sh
 ./scripts/sign-app.sh build/export/Lumae.app
 ./scripts/create-dmg.sh
 ```
@@ -161,6 +163,7 @@ Lumae keeps wallpapers, hashes, thumbnails, settings, and metadata on the Mac. I
 
 ## Troubleshooting
 
+- **Installed build crashes but Xcode build works:** rebuild and reinstall with `./scripts/install-local.sh`. Release builds are signed by Xcode so Sparkle's nested helpers receive valid signatures. If it still crashes, run `./scripts/diagnose-installed-crash.sh` and inspect or share the text file created under `~/Desktop/Lumae Diagnostics`.
 - **XcodeGen missing:** `brew install xcodegen`, then regenerate.
 - **Wallpaper is above icons:** quit Lumae, capture macOS version/Space/Stage Manager state, and inspect desktop-level behavior; do not raise/lower with arbitrary constants.
 - **Video black or unsupported:** test the file in QuickTime Player; transcode to H.264 or HEVC in MP4/MOV.
