@@ -20,6 +20,7 @@ struct WidgetsView: View {
     @State private var horizontalSnapGuides: [CGFloat] = []
     @State private var equalHorizontalSpacing = false
     @State private var equalVerticalSpacing = false
+    @State private var showsWidgetChooser = false
 
     private enum ResizeCorner: CaseIterable, Hashable {
         case topLeading
@@ -447,21 +448,22 @@ struct WidgetsView: View {
     }
 
     private var addWidgetMenu: some View {
-        Menu {
-            Button {
-                addWidget(.digitalClock)
-            } label: {
-                Label("Digital Clock", systemImage: "clock")
-            }
-            Button {
-                addWidget(.nowPlaying)
-            } label: {
-                Label("Now Playing", systemImage: "music.note")
-            }
+        Button {
+            showsWidgetChooser.toggle()
         } label: {
             Label("Add Widget", systemImage: "plus")
         }
         .disabled(model.widgetDisplayMode == .perDisplay && selectedDisplay == nil)
+        .popover(
+            isPresented: $showsWidgetChooser,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .bottom
+        ) {
+            WidgetChooserView { kind in
+                addWidget(kind)
+                showsWidgetChooser = false
+            }
+        }
     }
 
     @ViewBuilder
@@ -515,7 +517,16 @@ struct WidgetsView: View {
                     if let widget = selectedWidget {
                         widgetHeader(widget)
                         appearanceCard(widget)
-                        if widget.kind == .digitalClock { timeCard(widget) }
+                        switch widget.kind {
+                        case .digitalClock:
+                            timeCard(widget)
+                        case .dateCalendar:
+                            dateCalendarCard(widget)
+                        case .battery:
+                            batteryCard(widget)
+                        case .nowPlaying:
+                            EmptyView()
+                        }
                         placementCard(widget)
                         actionsCard(widget)
                     } else {
@@ -679,6 +690,89 @@ struct WidgetsView: View {
                 isOn: Binding(
                     get: { widget.digitalClock.showsSeconds },
                     set: { model.setClockShowsSeconds($0, id: widget.id) }
+                )
+            )
+        }
+    }
+
+    private func dateCalendarCard(_ widget: DesktopWidget) -> some View {
+        WidgetInspectorCard(title: "Date & Calendar") {
+            Picker(
+                "Layout",
+                selection: Binding(
+                    get: { widget.dateCalendar.mode },
+                    set: { model.setDateCalendarMode($0, id: widget.id) }
+                )
+            ) {
+                Text("Compact").tag(DateCalendarWidgetMode.compactDate)
+                Text("Full").tag(DateCalendarWidgetMode.fullDate)
+                Text("Month").tag(DateCalendarWidgetMode.monthCalendar)
+            }
+            .pickerStyle(.segmented)
+
+            Divider()
+
+            if widget.dateCalendar.mode == .monthCalendar {
+                Picker(
+                    "Week starts",
+                    selection: Binding(
+                        get: { widget.dateCalendar.weekStart },
+                        set: { model.setCalendarWeekStart($0, id: widget.id) }
+                    )
+                ) {
+                    Text("System").tag(CalendarWeekStart.system)
+                    Text("Sunday").tag(CalendarWeekStart.sunday)
+                    Text("Monday").tag(CalendarWeekStart.monday)
+                }
+
+                Toggle(
+                    "Show adjacent-month dates",
+                    isOn: Binding(
+                        get: { widget.dateCalendar.showsAdjacentMonthDates },
+                        set: { model.setCalendarShowsAdjacentDates($0, id: widget.id) }
+                    )
+                )
+            } else {
+                Toggle(
+                    "Show weekday",
+                    isOn: Binding(
+                        get: { widget.dateCalendar.showsWeekday },
+                        set: { model.setDateShowsWeekday($0, id: widget.id) }
+                    )
+                )
+            }
+
+            Toggle(
+                "Show year",
+                isOn: Binding(
+                    get: { widget.dateCalendar.showsYear },
+                    set: { model.setDateShowsYear($0, id: widget.id) }
+                )
+            )
+        }
+    }
+
+    private func batteryCard(_ widget: DesktopWidget) -> some View {
+        WidgetInspectorCard(title: "Battery") {
+            Toggle(
+                "Show percentage",
+                isOn: Binding(
+                    get: { widget.battery.showsPercentage },
+                    set: { model.setBatteryShowsPercentage($0, id: widget.id) }
+                )
+            )
+            Toggle(
+                "Show status text",
+                isOn: Binding(
+                    get: { widget.battery.showsStatusText },
+                    set: { model.setBatteryShowsStatusText($0, id: widget.id) }
+                )
+            )
+            Toggle(
+                "Show progress bar",
+                isOn: Binding(
+                    get: { widget.battery.showsProgressBar },
+                    set: { model.setBatteryShowsProgressBar($0, id: widget.id) }
                 )
             )
         }
@@ -1040,57 +1134,97 @@ struct WidgetsView: View {
     }
 
     private func widgetDisplayName(_ widget: DesktopWidget) -> String {
-        let sameKind = editableWidgets.filter { $0.kind == widget.kind }
-        let base = widgetName(widget.kind)
-        guard sameKind.count > 1,
-              let index = sameKind.firstIndex(where: { $0.id == widget.id }) else {
+        let sameName = editableWidgets.filter {
+            widgetBaseName($0) == widgetBaseName(widget)
+        }
+        let base = widgetBaseName(widget)
+        guard sameName.count > 1,
+              let index = sameName.firstIndex(where: { $0.id == widget.id }) else {
             return base
         }
         return "\(base) \(index + 1)"
     }
 
+    private func widgetBaseName(_ widget: DesktopWidget) -> String {
+        if widget.kind == .dateCalendar {
+            return widget.dateCalendar.mode == .monthCalendar
+                ? "Month Calendar"
+                : "Date"
+        }
+        return widgetName(widget.kind)
+    }
+
     private func widgetName(_ kind: DesktopWidgetKind) -> String {
-        kind == .digitalClock ? "Digital Clock" : "Now Playing"
+        switch kind {
+        case .digitalClock: return "Digital Clock"
+        case .nowPlaying: return "Now Playing"
+        case .dateCalendar: return "Date & Calendar"
+        case .battery: return "Battery"
+        }
     }
 
     private func widgetIcon(_ kind: DesktopWidgetKind) -> String {
-        kind == .digitalClock ? "clock" : "music.note"
+        switch kind {
+        case .digitalClock: return "clock"
+        case .nowPlaying: return "music.note"
+        case .dateCalendar: return "calendar"
+        case .battery: return "battery.75percent"
+        }
     }
 
     private func widgetSubtitle(_ kind: DesktopWidgetKind) -> String {
-        kind == .digitalClock
-            ? "A clean, glanceable time display"
-            : "Artwork, progress, and playback activity"
+        switch kind {
+        case .digitalClock:
+            return "A clean, glanceable time display"
+        case .nowPlaying:
+            return "Artwork, progress, and playback activity"
+        case .dateCalendar:
+            return "A date display or clean month overview"
+        case .battery:
+            return "Current power level and charging state"
+        }
     }
 
     private func showsBackground(_ widget: DesktopWidget) -> Bool {
-        widget.kind == .digitalClock
-            ? widget.digitalClock.showsBackground
-            : widget.nowPlaying.showsBackground
+        switch widget.kind {
+        case .digitalClock: return widget.digitalClock.showsBackground
+        case .nowPlaying: return widget.nowPlaying.showsBackground
+        case .dateCalendar: return widget.dateCalendar.showsBackground
+        case .battery: return widget.battery.showsBackground
+        }
     }
 
     private func setShowsBackground(_ enabled: Bool, widget: DesktopWidget) {
-        if widget.kind == .digitalClock {
+        switch widget.kind {
+        case .digitalClock:
             model.setClockShowsBackground(enabled, id: widget.id)
-        } else {
+        case .nowPlaying:
             model.setNowPlayingShowsBackground(enabled, id: widget.id)
+        case .dateCalendar:
+            model.setDateCalendarShowsBackground(enabled, id: widget.id)
+        case .battery:
+            model.setBatteryShowsBackground(enabled, id: widget.id)
         }
     }
 
     private func defaultPosition(_ kind: DesktopWidgetKind) -> NormalizedWidgetPosition {
-        kind == .digitalClock
-            ? NormalizedWidgetPosition(x: 0.5, y: 0.18)
-            : NormalizedWidgetPosition(x: 0.5, y: 0.78)
+        switch kind {
+        case .digitalClock: return NormalizedWidgetPosition(x: 0.5, y: 0.18)
+        case .nowPlaying: return NormalizedWidgetPosition(x: 0.5, y: 0.78)
+        case .dateCalendar: return NormalizedWidgetPosition(x: 0.18, y: 0.20)
+        case .battery: return NormalizedWidgetPosition(x: 0.82, y: 0.20)
+        }
     }
 
     private func selectionCornerRadius(_ widget: DesktopWidget) -> CGFloat {
         switch (widget.kind, widget.size) {
-        case (.digitalClock, .small): return 16
+        case (.digitalClock, .small), (.nowPlaying, .small): return 16
         case (.digitalClock, .large): return 25
-        case (.digitalClock, _): return 20
-        case (.nowPlaying, .small): return 16
         case (.nowPlaying, .large): return 27
-        case (.nowPlaying, _): return 21
+        case (.dateCalendar, .large), (.battery, .large): return 27
+        case (.dateCalendar, .small), (.battery, .small): return 16
+        case (.digitalClock, _): return 20
+        case (.nowPlaying, _), (.dateCalendar, _), (.battery, _): return 21
         }
     }
 
@@ -1212,5 +1346,148 @@ private struct WidgetKeyboardMonitor: NSViewRepresentable {
         }
 
         deinit { stop() }
+    }
+}
+
+private struct WidgetChooserView: View {
+    let add: (DesktopWidgetKind) -> Void
+
+    private let columns = [
+        GridItem(.fixed(190), spacing: 12),
+        GridItem(.fixed(190), spacing: 12)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Add Widget")
+                    .font(.headline)
+                Text("Choose something useful at a glance.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(columns: columns, spacing: 12) {
+                chooserCard(
+                    kind: .digitalClock,
+                    title: "Digital Clock",
+                    description: "Time with optional seconds."
+                )
+                chooserCard(
+                    kind: .nowPlaying,
+                    title: "Now Playing",
+                    description: "Artwork and playback progress."
+                )
+                chooserCard(
+                    kind: .dateCalendar,
+                    title: "Date & Calendar",
+                    description: "Date or full month overview."
+                )
+                chooserCard(
+                    kind: .battery,
+                    title: "Battery",
+                    description: "Power level and charging state."
+                )
+            }
+        }
+        .padding(16)
+        .frame(width: 420)
+    }
+
+    private func chooserCard(
+        kind: DesktopWidgetKind,
+        title: String,
+        description: String
+    ) -> some View {
+        Button {
+            add(kind)
+        } label: {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 9) {
+                    Image(systemName: icon(kind))
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.tint)
+                        .frame(width: 24, height: 24)
+                    Text(title)
+                        .font(.callout.weight(.semibold))
+                    Spacer(minLength: 0)
+                }
+
+                DesktopWidgetContentView(widget: sampleWidget(kind))
+                    .scaleEffect(previewScale(kind))
+                    .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                Color.black.opacity(0.82),
+                                Color.gray.opacity(0.55)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                    .clipped()
+
+                Text(description)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(11)
+            .frame(width: 190, height: 124, alignment: .leading)
+            .background(
+                Color(nsColor: .controlBackgroundColor),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func sampleWidget(_ kind: DesktopWidgetKind) -> DesktopWidget {
+        switch kind {
+        case .digitalClock:
+            return DesktopWidget(
+                kind: .digitalClock,
+                size: .small,
+                digitalClock: DigitalClockWidgetSettings(
+                    uses24HourTime: false,
+                    showsSeconds: false,
+                    showsBackground: true
+                )
+            )
+        case .nowPlaying:
+            return DesktopWidget(kind: .nowPlaying, size: .small)
+        case .dateCalendar:
+            return DesktopWidget(
+                kind: .dateCalendar,
+                size: .small,
+                dateCalendar: DateCalendarWidgetSettings(mode: .compactDate)
+            )
+        case .battery:
+            return DesktopWidget(kind: .battery, size: .small)
+        }
+    }
+
+    private func previewScale(_ kind: DesktopWidgetKind) -> CGFloat {
+        switch kind {
+        case .digitalClock: return 0.48
+        case .nowPlaying: return 0.38
+        case .dateCalendar: return 0.52
+        case .battery: return 0.52
+        }
+    }
+
+    private func icon(_ kind: DesktopWidgetKind) -> String {
+        switch kind {
+        case .digitalClock: return "clock"
+        case .nowPlaying: return "music.note"
+        case .dateCalendar: return "calendar"
+        case .battery: return "battery.75percent"
+        }
     }
 }

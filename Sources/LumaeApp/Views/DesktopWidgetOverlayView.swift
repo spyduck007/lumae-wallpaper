@@ -76,6 +76,10 @@ struct DesktopWidgetContentView: View {
             DigitalClockWidgetView(widget: widget)
         case .nowPlaying:
             NowPlayingWidgetView(widget: widget)
+        case .dateCalendar:
+            DateCalendarWidgetView(widget: widget)
+        case .battery:
+            BatteryWidgetView(widget: widget)
         }
     }
 }
@@ -518,5 +522,397 @@ private struct EqualizerView: View {
         let secondary = sin(phase * 0.63 + Double(index) * 0.31)
         let value = 0.24 + abs(sin(phase)) * 0.52 + abs(secondary) * 0.18
         return max(3, available * CGFloat(min(value, 0.96)))
+    }
+}
+
+
+struct DateCalendarWidgetView: View {
+    let widget: DesktopWidget
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            Group {
+                switch widget.dateCalendar.mode {
+                case .compactDate:
+                    compactDate(context.date)
+                case .fullDate:
+                    fullDate(context.date)
+                case .monthCalendar:
+                    monthCalendar(context.date)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(containerPadding)
+            .background {
+                if widget.dateCalendar.showsBackground {
+                    widgetGlassBackground(cornerRadius: cornerRadius)
+                }
+            }
+            .shadow(
+                color: .black.opacity(0.28),
+                radius: 12 * layoutScale,
+                y: 4 * layoutScale
+            )
+        }
+    }
+
+    private func compactDate(_ date: Date) -> some View {
+        VStack(alignment: .leading, spacing: 3 * layoutScale) {
+            if widget.dateCalendar.showsWeekday {
+                Text(format(date, "EEEE").uppercased())
+                    .font(.system(
+                        size: 12 * layoutScale,
+                        weight: .semibold,
+                        design: .rounded
+                    ))
+                    .tracking(1.2 * layoutScale)
+                    .foregroundStyle(.white.opacity(0.64))
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 7 * layoutScale) {
+                Text(format(date, "MMMM"))
+                    .font(.system(
+                        size: 24 * layoutScale,
+                        weight: .medium,
+                        design: .rounded
+                    ))
+                Text(format(date, "d"))
+                    .font(.system(
+                        size: 38 * layoutScale,
+                        weight: .semibold,
+                        design: .rounded
+                    ))
+                    .monospacedDigit()
+            }
+
+            if widget.dateCalendar.showsYear {
+                Text(format(date, "yyyy"))
+                    .font(.system(
+                        size: 12 * layoutScale,
+                        weight: .medium,
+                        design: .rounded
+                    ))
+                    .foregroundStyle(.white.opacity(0.58))
+            }
+        }
+    }
+
+    private func fullDate(_ date: Date) -> some View {
+        VStack(alignment: .leading, spacing: 6 * layoutScale) {
+            if widget.dateCalendar.showsWeekday {
+                Text(format(date, "EEEE"))
+                    .font(.system(
+                        size: 18 * layoutScale,
+                        weight: .semibold,
+                        design: .rounded
+                    ))
+                    .foregroundStyle(.white.opacity(0.68))
+            }
+
+            Text(fullDateText(date))
+                .font(.system(
+                    size: 30 * layoutScale,
+                    weight: .medium,
+                    design: .rounded
+                ))
+                .lineLimit(1)
+        }
+    }
+
+    private func monthCalendar(_ date: Date) -> some View {
+        let calendar = configuredCalendar
+        let cells = calendarCells(for: date, calendar: calendar)
+        let symbols = weekdaySymbols(calendar: calendar)
+
+        return VStack(alignment: .leading, spacing: 11 * layoutScale) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(format(date, widget.dateCalendar.showsYear ? "MMMM yyyy" : "MMMM"))
+                    .font(.system(
+                        size: 19 * layoutScale,
+                        weight: .semibold,
+                        design: .rounded
+                    ))
+                Spacer(minLength: 16 * layoutScale)
+                Text(format(date, "d"))
+                    .font(.system(
+                        size: 13 * layoutScale,
+                        weight: .semibold,
+                        design: .rounded
+                    ))
+                    .foregroundStyle(.white.opacity(0.62))
+            }
+
+            LazyVGrid(
+                columns: Array(
+                    repeating: GridItem(.fixed(25 * layoutScale), spacing: 3 * layoutScale),
+                    count: 7
+                ),
+                spacing: 4 * layoutScale
+            ) {
+                ForEach(Array(symbols.enumerated()), id: \.offset) { _, symbol in
+                    Text(symbol.uppercased())
+                        .font(.system(
+                            size: 8 * layoutScale,
+                            weight: .semibold,
+                            design: .rounded
+                        ))
+                        .foregroundStyle(.white.opacity(0.48))
+                        .frame(width: 25 * layoutScale)
+                }
+
+                ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
+                    calendarCell(cell, calendar: calendar)
+                }
+            }
+        }
+    }
+
+    private func calendarCell(
+        _ cell: CalendarCell,
+        calendar: Calendar
+    ) -> some View {
+        let isToday = cell.date.map { calendar.isDateInToday($0) } ?? false
+        return ZStack {
+            if isToday {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.92))
+            }
+            Text(cell.date.map { String(calendar.component(.day, from: $0)) } ?? "")
+                .font(.system(
+                    size: 10 * layoutScale,
+                    weight: isToday ? .bold : .medium,
+                    design: .rounded
+                ))
+                .foregroundStyle(
+                    cell.isCurrentMonth
+                        ? Color.white
+                        : Color.white.opacity(0.30)
+                )
+        }
+        .frame(width: 25 * layoutScale, height: 23 * layoutScale)
+    }
+
+    private var configuredCalendar: Calendar {
+        var calendar = Calendar.autoupdatingCurrent
+        switch widget.dateCalendar.weekStart {
+        case .system:
+            break
+        case .sunday:
+            calendar.firstWeekday = 1
+        case .monday:
+            calendar.firstWeekday = 2
+        }
+        return calendar
+    }
+
+    private func weekdaySymbols(calendar: Calendar) -> [String] {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.autoupdatingCurrent
+        formatter.calendar = calendar
+        let localized = formatter.veryShortStandaloneWeekdaySymbols
+            ?? formatter.veryShortWeekdaySymbols
+            ?? []
+        let symbols = localized.isEmpty
+            ? ["S", "M", "T", "W", "T", "F", "S"]
+            : localized
+        let index = min(max(calendar.firstWeekday - 1, 0), symbols.count - 1)
+        return Array(symbols[index...]) + Array(symbols[..<index])
+    }
+
+    private func calendarCells(
+        for date: Date,
+        calendar: Calendar
+    ) -> [CalendarCell] {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: date),
+              calendar.range(of: .day, in: .month, for: date) != nil else {
+            return []
+        }
+
+        let firstDay = monthInterval.start
+        let weekday = calendar.component(.weekday, from: firstDay)
+        let offset = (weekday - calendar.firstWeekday + 7) % 7
+        let start = calendar.date(byAdding: .day, value: -offset, to: firstDay)
+            ?? firstDay
+
+        return (0..<42).map { index in
+            let cellDate = calendar.date(byAdding: .day, value: index, to: start)
+            guard let cellDate else {
+                return CalendarCell(date: nil, isCurrentMonth: false)
+            }
+            let currentMonth = calendar.isDate(
+                cellDate,
+                equalTo: date,
+                toGranularity: .month
+            )
+            return CalendarCell(
+                date: currentMonth || widget.dateCalendar.showsAdjacentMonthDates
+                    ? cellDate
+                    : nil,
+                isCurrentMonth: currentMonth
+            )
+        }
+    }
+
+    private func fullDateText(_ date: Date) -> String {
+        let dateFormat = widget.dateCalendar.showsYear
+            ? "MMMM d, yyyy"
+            : "MMMM d"
+        return format(date, dateFormat)
+    }
+
+    private func format(_ date: Date, _ format: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.autoupdatingCurrent
+        formatter.calendar = configuredCalendar
+        formatter.dateFormat = format
+        return formatter.string(from: date)
+    }
+
+    private var layoutScale: CGFloat {
+        let custom = CGFloat(widget.renderingScale)
+        switch widget.size {
+        case .small: return 0.78
+        case .medium: return 1
+        case .large: return 1.30
+        case .custom: return custom
+        }
+    }
+
+    private var containerPadding: CGFloat { 15 * layoutScale }
+    private var cornerRadius: CGFloat { 20 * layoutScale }
+}
+
+private struct CalendarCell {
+    var date: Date?
+    var isCurrentMonth: Bool
+}
+
+struct BatteryWidgetView: View {
+    let widget: DesktopWidget
+
+    @ObservedObject private var service = BatteryService.shared
+
+    var body: some View {
+        let snapshot = service.snapshot
+        HStack(spacing: 13 * layoutScale) {
+            batteryIcon(snapshot)
+
+            VStack(alignment: .leading, spacing: 6 * layoutScale) {
+                HStack(alignment: .firstTextBaseline, spacing: 7 * layoutScale) {
+                    if widget.battery.showsPercentage {
+                        Text(snapshot.hasInternalBattery ? "\(snapshot.percentage)%" : "AC Power")
+                            .font(.system(
+                                size: 25 * layoutScale,
+                                weight: .semibold,
+                                design: .rounded
+                            ))
+                            .monospacedDigit()
+                    }
+
+                    if snapshot.isCharging && snapshot.hasInternalBattery {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 11 * layoutScale, weight: .bold))
+                            .foregroundStyle(.yellow.opacity(0.92))
+                    }
+                }
+
+                if widget.battery.showsStatusText {
+                    Text(snapshot.hasInternalBattery
+                        ? snapshot.statusText
+                        : "No internal battery")
+                        .font(.system(
+                            size: 11 * layoutScale,
+                            weight: .medium,
+                            design: .rounded
+                        ))
+                        .foregroundStyle(.white.opacity(0.60))
+                }
+
+                if widget.battery.showsProgressBar {
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.white.opacity(0.15))
+                            Capsule()
+                                .fill(progressColor(snapshot))
+                                .frame(
+                                    width: proxy.size.width
+                                        * CGFloat(snapshot.hasInternalBattery
+                                            ? Double(snapshot.percentage) / 100
+                                            : 1)
+                                )
+                        }
+                    }
+                    .frame(width: 118 * layoutScale, height: 4 * layoutScale)
+                }
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(14 * layoutScale)
+        .background {
+            if widget.battery.showsBackground {
+                widgetGlassBackground(cornerRadius: 19 * layoutScale)
+            }
+        }
+        .shadow(
+            color: .black.opacity(0.28),
+            radius: 12 * layoutScale,
+            y: 4 * layoutScale
+        )
+    }
+
+    private func batteryIcon(_ snapshot: BatterySnapshot) -> some View {
+        Image(systemName: batterySymbol(snapshot))
+            .font(.system(size: 31 * layoutScale, weight: .medium))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(progressColor(snapshot))
+            .frame(width: 42 * layoutScale)
+    }
+
+    private func batterySymbol(_ snapshot: BatterySnapshot) -> String {
+        guard snapshot.hasInternalBattery else { return "powerplug.fill" }
+        if snapshot.isCharging { return "battery.100percent" }
+        switch snapshot.percentage {
+        case 76...100: return "battery.100percent"
+        case 51...75: return "battery.75percent"
+        case 26...50: return "battery.50percent"
+        case 11...25: return "battery.25percent"
+        default: return "battery.0percent"
+        }
+    }
+
+    private func progressColor(_ snapshot: BatterySnapshot) -> Color {
+        guard snapshot.hasInternalBattery else { return .white.opacity(0.72) }
+        if snapshot.isCharging { return .green.opacity(0.92) }
+        if snapshot.percentage <= 20 { return .red.opacity(0.92) }
+        return .white.opacity(0.84)
+    }
+
+    private var layoutScale: CGFloat {
+        let custom = CGFloat(widget.renderingScale)
+        switch widget.size {
+        case .small: return 0.78
+        case .medium: return 1
+        case .large: return 1.30
+        case .custom: return custom
+        }
+    }
+}
+
+@ViewBuilder
+private func widgetGlassBackground(cornerRadius: CGFloat) -> some View {
+    ZStack {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .environment(\.colorScheme, .dark)
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(.black.opacity(0.08))
+        LinearGradient(
+            colors: [.white.opacity(0.11), .clear],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .stroke(.white.opacity(0.17), lineWidth: 1)
     }
 }

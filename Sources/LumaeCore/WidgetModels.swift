@@ -3,6 +3,8 @@ import Foundation
 public enum DesktopWidgetKind: String, Codable, CaseIterable, Sendable {
     case digitalClock
     case nowPlaying
+    case dateCalendar
+    case battery
 }
 
 public enum DesktopWidgetSize: String, Codable, CaseIterable, Sendable {
@@ -74,6 +76,63 @@ public struct NowPlayingWidgetSettings: Codable, Hashable, Sendable {
     }
 }
 
+
+public enum DateCalendarWidgetMode: String, Codable, CaseIterable, Sendable {
+    case compactDate
+    case fullDate
+    case monthCalendar
+}
+
+public enum CalendarWeekStart: String, Codable, CaseIterable, Sendable {
+    case system
+    case sunday
+    case monday
+}
+
+public struct DateCalendarWidgetSettings: Codable, Hashable, Sendable {
+    public var mode: DateCalendarWidgetMode
+    public var showsWeekday: Bool
+    public var showsYear: Bool
+    public var weekStart: CalendarWeekStart
+    public var showsAdjacentMonthDates: Bool
+    public var showsBackground: Bool
+
+    public init(
+        mode: DateCalendarWidgetMode = .compactDate,
+        showsWeekday: Bool = true,
+        showsYear: Bool = false,
+        weekStart: CalendarWeekStart = .system,
+        showsAdjacentMonthDates: Bool = true,
+        showsBackground: Bool = true
+    ) {
+        self.mode = mode
+        self.showsWeekday = showsWeekday
+        self.showsYear = showsYear
+        self.weekStart = weekStart
+        self.showsAdjacentMonthDates = showsAdjacentMonthDates
+        self.showsBackground = showsBackground
+    }
+}
+
+public struct BatteryWidgetSettings: Codable, Hashable, Sendable {
+    public var showsPercentage: Bool
+    public var showsStatusText: Bool
+    public var showsProgressBar: Bool
+    public var showsBackground: Bool
+
+    public init(
+        showsPercentage: Bool = true,
+        showsStatusText: Bool = true,
+        showsProgressBar: Bool = true,
+        showsBackground: Bool = true
+    ) {
+        self.showsPercentage = showsPercentage
+        self.showsStatusText = showsStatusText
+        self.showsProgressBar = showsProgressBar
+        self.showsBackground = showsBackground
+    }
+}
+
 public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
     public var id: UUID
     public var kind: DesktopWidgetKind
@@ -83,6 +142,8 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
     public var customScale: Double?
     public var digitalClock: DigitalClockWidgetSettings
     public var nowPlaying: NowPlayingWidgetSettings
+    public var dateCalendar: DateCalendarWidgetSettings
+    public var battery: BatteryWidgetSettings
 
     public init(
         id: UUID = UUID(),
@@ -92,7 +153,9 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         size: DesktopWidgetSize = .medium,
         customScale: Double? = nil,
         digitalClock: DigitalClockWidgetSettings = DigitalClockWidgetSettings(),
-        nowPlaying: NowPlayingWidgetSettings = NowPlayingWidgetSettings()
+        nowPlaying: NowPlayingWidgetSettings = NowPlayingWidgetSettings(),
+        dateCalendar: DateCalendarWidgetSettings = DateCalendarWidgetSettings(),
+        battery: BatteryWidgetSettings = BatteryWidgetSettings()
     ) {
         self.id = id
         self.kind = kind
@@ -102,6 +165,8 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         self.customScale = customScale.map(Self.clampedCustomScale)
         self.digitalClock = digitalClock
         self.nowPlaying = nowPlaying
+        self.dateCalendar = dateCalendar
+        self.battery = battery
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -113,6 +178,8 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         case customScale
         case digitalClock
         case nowPlaying
+        case dateCalendar
+        case battery
     }
 
     public init(from decoder: Decoder) throws {
@@ -140,6 +207,14 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
             NowPlayingWidgetSettings.self,
             forKey: .nowPlaying
         ) ?? NowPlayingWidgetSettings()
+        dateCalendar = try container.decodeIfPresent(
+            DateCalendarWidgetSettings.self,
+            forKey: .dateCalendar
+        ) ?? DateCalendarWidgetSettings()
+        battery = try container.decodeIfPresent(
+            BatteryWidgetSettings.self,
+            forKey: .battery
+        ) ?? BatteryWidgetSettings()
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -152,6 +227,8 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         try container.encodeIfPresent(customScale, forKey: .customScale)
         try container.encode(digitalClock, forKey: .digitalClock)
         try container.encode(nowPlaying, forKey: .nowPlaying)
+        try container.encode(dateCalendar, forKey: .dateCalendar)
+        try container.encode(battery, forKey: .battery)
     }
 
     public var renderingScale: Double {

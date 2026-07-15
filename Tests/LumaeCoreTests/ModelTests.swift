@@ -141,4 +141,45 @@ final class ModelTests:XCTestCase {
   XCTAssertTrue(result.hasEqualHorizontalSpacing)
   XCTAssertEqual(result.frame.minX,110,accuracy:0.001)
  }
+
+ func testNewWidgetSettingsPersist() throws {
+  let date=DesktopWidget(
+   kind:.dateCalendar,
+   dateCalendar:DateCalendarWidgetSettings(
+    mode:.monthCalendar,
+    showsWeekday:false,
+    showsYear:true,
+    weekStart:.monday,
+    showsAdjacentMonthDates:false,
+    showsBackground:false
+   )
+  )
+  let battery=DesktopWidget(
+   kind:.battery,
+   battery:BatteryWidgetSettings(
+    showsPercentage:false,
+    showsStatusText:true,
+    showsProgressBar:false,
+    showsBackground:false
+   )
+  )
+  let state=PersistedApplicationState(widgets:[date,battery])
+  let decoded=try JSONDecoder().decode(PersistedApplicationState.self,from:JSONEncoder().encode(state))
+  XCTAssertEqual(decoded.widgets,[date,battery])
+ }
+ func testOlderWidgetDecodesNewSettingsDefaults() throws {
+  let widget=DesktopWidget(kind:.digitalClock)
+  let encoded=try JSONEncoder().encode(widget)
+  var object=try XCTUnwrap(JSONSerialization.jsonObject(with:encoded) as? [String:Any])
+  object.removeValue(forKey:"dateCalendar")
+  object.removeValue(forKey:"battery")
+  let legacy=try JSONSerialization.data(withJSONObject:object)
+  let decoded=try JSONDecoder().decode(DesktopWidget.self,from:legacy)
+  XCTAssertEqual(decoded.dateCalendar,DateCalendarWidgetSettings())
+  XCTAssertEqual(decoded.battery,BatteryWidgetSettings())
+ }
+ func testWidgetKindsIncludeDateAndBattery(){
+  XCTAssertTrue(DesktopWidgetKind.allCases.contains(.dateCalendar))
+  XCTAssertTrue(DesktopWidgetKind.allCases.contains(.battery))
+ }
 }

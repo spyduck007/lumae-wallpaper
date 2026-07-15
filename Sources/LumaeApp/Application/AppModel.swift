@@ -956,6 +956,68 @@ extension AppModel {
         }
     }
 
+    func setDateCalendarMode(_ mode: DateCalendarWidgetMode, id: UUID) {
+        performWidgetMutation(named: "Change Date Layout") {
+            updateWidgetWithoutHistory(id: id) { $0.dateCalendar.mode = mode }
+        }
+    }
+
+    func setDateShowsWeekday(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: enabled ? "Show Weekday" : "Hide Weekday") {
+            updateWidgetWithoutHistory(id: id) { $0.dateCalendar.showsWeekday = enabled }
+        }
+    }
+
+    func setDateShowsYear(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: enabled ? "Show Year" : "Hide Year") {
+            updateWidgetWithoutHistory(id: id) { $0.dateCalendar.showsYear = enabled }
+        }
+    }
+
+    func setCalendarWeekStart(_ start: CalendarWeekStart, id: UUID) {
+        performWidgetMutation(named: "Change Week Start") {
+            updateWidgetWithoutHistory(id: id) { $0.dateCalendar.weekStart = start }
+        }
+    }
+
+    func setCalendarShowsAdjacentDates(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: "Change Adjacent Dates") {
+            updateWidgetWithoutHistory(id: id) {
+                $0.dateCalendar.showsAdjacentMonthDates = enabled
+            }
+        }
+    }
+
+    func setDateCalendarShowsBackground(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: "Change Date Background") {
+            updateWidgetWithoutHistory(id: id) { $0.dateCalendar.showsBackground = enabled }
+        }
+    }
+
+    func setBatteryShowsPercentage(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: "Change Battery Percentage") {
+            updateWidgetWithoutHistory(id: id) { $0.battery.showsPercentage = enabled }
+        }
+    }
+
+    func setBatteryShowsStatusText(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: "Change Battery Status") {
+            updateWidgetWithoutHistory(id: id) { $0.battery.showsStatusText = enabled }
+        }
+    }
+
+    func setBatteryShowsProgressBar(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: "Change Battery Progress") {
+            updateWidgetWithoutHistory(id: id) { $0.battery.showsProgressBar = enabled }
+        }
+    }
+
+    func setBatteryShowsBackground(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: "Change Battery Background") {
+            updateWidgetWithoutHistory(id: id) { $0.battery.showsBackground = enabled }
+        }
+    }
+
     func bringWidgetForward(id: UUID, for displayID: String?) {
         reorderWidget(id: id, for: displayID, actionName: "Bring Widget Forward") { index, collection in
             guard index + 1 < collection.count else { return }
@@ -1053,7 +1115,26 @@ extension AppModel {
         case .digitalClock:
             return DesktopWidget(id: id, kind: .digitalClock, position: NormalizedWidgetPosition(x: 0.5, y: 0.18), size: .medium)
         case .nowPlaying:
-            return DesktopWidget(id: id, kind: .nowPlaying, position: NormalizedWidgetPosition(x: 0.5, y: 0.78), size: .medium)
+            return DesktopWidget(
+                id: id,
+                kind: .nowPlaying,
+                position: NormalizedWidgetPosition(x: 0.5, y: 0.78),
+                size: .medium
+            )
+        case .dateCalendar:
+            return DesktopWidget(
+                id: id,
+                kind: .dateCalendar,
+                position: NormalizedWidgetPosition(x: 0.18, y: 0.20),
+                size: .medium
+            )
+        case .battery:
+            return DesktopWidget(
+                id: id,
+                kind: .battery,
+                position: NormalizedWidgetPosition(x: 0.82, y: 0.20),
+                size: .medium
+            )
         }
     }
 
@@ -1065,6 +1146,9 @@ extension AppModel {
         case (.nowPlaying, .small): return 0.74
         case (.nowPlaying, .medium): return 1
         case (.nowPlaying, .large): return 1.33
+        case (.dateCalendar, .small), (.battery, .small): return 0.78
+        case (.dateCalendar, .medium), (.battery, .medium): return 1
+        case (.dateCalendar, .large), (.battery, .large): return 1.30
         case (_, .custom): return widget.customScale ?? 1
         }
     }
