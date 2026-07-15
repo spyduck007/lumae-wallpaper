@@ -217,12 +217,54 @@ struct WidgetsView: View {
         in previewSize: CGSize
     ) -> some View {
         let scale = totalPreviewScale(for: widget, in: previewSize)
+        let isSelected = selectedWidgetID == widget.id
+        let showsResizeHandles = isSelected && widget.size == .custom
 
         return DesktopWidgetContentView(widget: previewWidget(widget))
             .overlay {
-                if selectedWidgetID == widget.id {
-                    selectionChrome(
+                if isSelected {
+                    selectionBorder(
                         for: widget,
+                        totalScale: scale
+                    )
+                    .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if showsResizeHandles {
+                    resizeHandle(
+                        corner: .topLeading,
+                        widget: widget,
+                        totalScale: scale,
+                        previewSize: previewSize
+                    )
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if showsResizeHandles {
+                    resizeHandle(
+                        corner: .topTrailing,
+                        widget: widget,
+                        totalScale: scale,
+                        previewSize: previewSize
+                    )
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if showsResizeHandles {
+                    resizeHandle(
+                        corner: .bottomLeading,
+                        widget: widget,
+                        totalScale: scale,
+                        previewSize: previewSize
+                    )
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if showsResizeHandles {
+                    resizeHandle(
+                        corner: .bottomTrailing,
+                        widget: widget,
                         totalScale: scale,
                         previewSize: previewSize
                     )
@@ -240,16 +282,12 @@ struct WidgetsView: View {
             .gesture(dragGesture(for: widget, in: previewSize))
     }
 
-    @ViewBuilder
-    private func selectionChrome(
+    private func selectionBorder(
         for widget: DesktopWidget,
-        totalScale: CGFloat,
-        previewSize: CGSize
+        totalScale: CGFloat
     ) -> some View {
         let safeScale = max(totalScale, 0.01)
-        let inset = 7 / safeScale
-
-        RoundedRectangle(
+        return RoundedRectangle(
             cornerRadius: selectionCornerRadius(widget),
             style: .continuous
         )
@@ -264,34 +302,7 @@ struct WidgetsView: View {
                 dash: [7 / safeScale, 5 / safeScale]
             )
         )
-        .padding(-inset)
-
-        if widget.size == .custom {
-            resizeHandle(
-                corner: .topLeading,
-                widget: widget,
-                totalScale: safeScale,
-                previewSize: previewSize
-            )
-            resizeHandle(
-                corner: .topTrailing,
-                widget: widget,
-                totalScale: safeScale,
-                previewSize: previewSize
-            )
-            resizeHandle(
-                corner: .bottomLeading,
-                widget: widget,
-                totalScale: safeScale,
-                previewSize: previewSize
-            )
-            resizeHandle(
-                corner: .bottomTrailing,
-                widget: widget,
-                totalScale: safeScale,
-                previewSize: previewSize
-            )
-        }
+        .padding(-7 / safeScale)
     }
 
     private func resizeHandle(
@@ -300,30 +311,33 @@ struct WidgetsView: View {
         totalScale: CGFloat,
         previewSize: CGSize
     ) -> some View {
-        let diameter = 12 / totalScale
-        let offset = 6 / totalScale
+        let safeScale = max(totalScale, 0.01)
+        let visibleDiameter = 12 / safeScale
+        let hitTarget = 28 / safeScale
+        let outwardOffset = hitTarget / 2
 
-        return Circle()
-            .fill(Color(nsColor: .windowBackgroundColor))
-            .overlay {
-                Circle()
-                    .stroke(Color.accentColor, lineWidth: 2 / totalScale)
-            }
-            .frame(width: diameter, height: diameter)
-            .frame(
-                maxWidth: .infinity,
-                maxHeight: .infinity,
-                alignment: corner.alignment
-            )
-            .offset(
-                x: corner.xDirection * offset,
-                y: corner.yDirection * offset
-            )
-            .contentShape(Circle())
-            .highPriorityGesture(
-                resizeGesture(for: widget, in: previewSize)
-            )
-            .help("Drag to resize proportionally")
+        return ZStack {
+            Circle()
+                .fill(Color(nsColor: .windowBackgroundColor))
+                .frame(width: visibleDiameter, height: visibleDiameter)
+                .overlay {
+                    Circle()
+                        .stroke(
+                            Color.accentColor,
+                            lineWidth: 2 / safeScale
+                        )
+                }
+        }
+        .frame(width: hitTarget, height: hitTarget)
+        .contentShape(Rectangle())
+        .offset(
+            x: corner.xDirection * outwardOffset,
+            y: corner.yDirection * outwardOffset
+        )
+        .highPriorityGesture(
+            resizeGesture(for: widget, in: previewSize)
+        )
+        .help("Drag to resize proportionally")
     }
 
     @ViewBuilder
