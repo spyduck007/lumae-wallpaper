@@ -42,10 +42,17 @@ struct DigitalClockWidgetView: View {
                 .shadow(color: .black.opacity(0.42), radius: 8, y: 3)
                 .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, verticalPadding)
-                .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .background {
+                    if widget.digitalClock.showsBackground {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(.black.opacity(0.18))
+                    }
+                }
                 .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(.white.opacity(0.18), lineWidth: 1)
+                    if widget.digitalClock.showsBackground {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .stroke(.white.opacity(0.18), lineWidth: 1)
+                    }
                 }
         }
     }

@@ -14,6 +14,7 @@ struct WidgetsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
+                    modeControl
                     previewCard
                     footerNote
                 }
@@ -28,20 +29,30 @@ struct WidgetsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear(perform: syncPreviewPosition)
-        .onChange(of: model.digitalClockWidget?.position) { _, _ in
-            if !isDragging {
-                syncPreviewPosition()
-            }
+        .onAppear {
+            selectInitialDisplayIfNeeded()
+            syncPreviewPosition()
+        }
+        .onChange(of: model.selectedDisplayID) { _, _ in
+            syncPreviewPosition()
+        }
+        .onChange(of: model.widgetDisplayMode) { _, _ in
+            syncPreviewPosition()
+        }
+        .onChange(of: editableClock?.position) { _, _ in
+            if !isDragging { syncPreviewPosition() }
+        }
+        .onChange(of: model.displayTopology) { _, _ in
+            selectInitialDisplayIfNeeded()
         }
         .confirmationDialog(
-            "Remove the clock widget?",
+            removeConfirmationTitle,
             isPresented: $confirmRemoval,
             titleVisibility: .visible
         ) {
             Button("Remove Clock", role: .destructive) {
-                if let widget = model.digitalClockWidget {
-                    model.removeWidget(id: widget.id)
+                if let clock = editableClock {
+                    model.removeWidget(id: clock.id)
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -58,32 +69,89 @@ struct WidgetsView: View {
         }
     }
 
+    private var modeControl: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Display Behavior")
+                    .font(.headline)
+                Spacer()
+                Label("Applies immediately", systemImage: "bolt.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Picker(
+                "Display Behavior",
+                selection: Binding(
+                    get: { model.widgetDisplayMode },
+                    set: { model.setWidgetDisplayMode($0) }
+                )
+            ) {
+                Label("Mirror", systemImage: "rectangle.on.rectangle")
+                    .tag(WidgetDisplayMode.mirrored)
+                Label("Per Display", systemImage: "rectangle.split.2x1")
+                    .tag(WidgetDisplayMode.perDisplay)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 420)
+
+            Text(modeDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var previewCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(spacing: 12) {
                 Text("Wallpaper Preview")
                     .font(.headline)
 
                 Spacer()
 
-                Label("Applies to every display", systemImage: "display.2")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if !model.displayTopology.displays.isEmpty {
+                    Picker(
+                        "Display",
+                        selection: Binding(
+                            get: { selectedDisplay?.id ?? "" },
+                            set: { model.selectedDisplayID = $0 }
+                        )
+                    ) {
+                        ForEach(model.displayTopology.displays) { display in
+                            Label(
+                                display.fingerprint.localizedName,
+                                systemImage: display.isBuiltIn
+                                    ? "laptopcomputer"
+                                    : "display"
+                            )
+                            .tag(display.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 220)
+                }
             }
 
             GeometryReader { proxy in
                 ZStack {
                     previewWallpaper
 
-                    if let widget = model.digitalClockWidget {
-                        DigitalClockWidgetView(widget: previewWidget(widget))
+                    if let clock = editableClock,
+                       selectedDisplayWidgetsEnabled,
+                       clock.isEnabled {
+                        DigitalClockWidgetView(widget: previewWidget(clock))
                             .overlay {
-                                RoundedRectangle(cornerRadius: selectionCornerRadius(widget.size), style: .continuous)
-                                    .stroke(
-                                        Color.accentColor.opacity(isDragging ? 0.95 : 0.55),
-                                        style: StrokeStyle(lineWidth: 2, dash: [7, 5])
-                                    )
-                                    .padding(-6)
+                                RoundedRectangle(
+                                    cornerRadius: selectionCornerRadius(clock.size),
+                                    style: .continuous
+                                )
+                                .stroke(
+                                    Color.accentColor.opacity(isDragging ? 0.95 : 0.55),
+                                    style: StrokeStyle(lineWidth: 2, dash: [7, 5])
+                                )
+                                .padding(-6)
                             }
                             .contentShape(Rectangle())
                             .position(
@@ -91,48 +159,30 @@ struct WidgetsView: View {
                                 y: proxy.size.height * previewPosition.y
                             )
                             .gesture(
-                                DragGesture(minimumDistance: 1, coordinateSpace: .named("widgetPreview"))
-                                    .onChanged { value in
-                                        isDragging = true
-                                        previewPosition = normalizedPosition(
-                                            for: value.location,
-                                            in: proxy.size
-                                        )
-                                    }
-                                    .onEnded { value in
-                                        let position = normalizedPosition(
-                                            for: value.location,
-                                            in: proxy.size
-                                        )
-                                        previewPosition = position
-                                        isDragging = false
-                                        model.setWidgetPosition(position, id: widget.id)
-                                    }
+                                DragGesture(
+                                    minimumDistance: 1,
+                                    coordinateSpace: .named("widgetPreview")
+                                )
+                                .onChanged { value in
+                                    isDragging = true
+                                    previewPosition = normalizedPosition(
+                                        for: value.location,
+                                        in: proxy.size
+                                    )
+                                }
+                                .onEnded { value in
+                                    let position = normalizedPosition(
+                                        for: value.location,
+                                        in: proxy.size
+                                    )
+                                    previewPosition = position
+                                    isDragging = false
+                                    model.setWidgetPosition(position, id: clock.id)
+                                }
                             )
                             .help("Drag to reposition the clock")
                     } else {
-                        VStack(spacing: 14) {
-                            Image(systemName: "clock.badge.plus")
-                                .font(.system(size: 42, weight: .light))
-                                .foregroundStyle(.secondary)
-
-                            Text("No Widgets Yet")
-                                .font(.title3.bold())
-
-                            Text("Start with a clean digital clock.")
-                                .foregroundStyle(.secondary)
-
-                            Button("Add Digital Clock") {
-                                let id = model.addDigitalClockWidget()
-                                if let widget = model.widgets.first(where: { $0.id == id }) {
-                                    previewPosition = widget.position
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                        }
-                        .padding(28)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        emptyPreviewState
                     }
                 }
                 .coordinateSpace(name: "widgetPreview")
@@ -151,47 +201,91 @@ struct WidgetsView: View {
         )
     }
 
+    @ViewBuilder
+    private var emptyPreviewState: some View {
+        if !selectedDisplayWidgetsEnabled, editableClock != nil {
+            VStack(spacing: 12) {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 38, weight: .light))
+                    .foregroundStyle(.secondary)
+                Text("Widgets Hidden on This Display")
+                    .font(.title3.bold())
+                Button("Show Widgets") {
+                    if let id = selectedDisplay?.id {
+                        model.setWidgetsEnabled(true, for: id)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(24)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+        } else if let clock = editableClock, !clock.isEnabled {
+            VStack(spacing: 12) {
+                Image(systemName: "clock.badge.xmark")
+                    .font(.system(size: 38, weight: .light))
+                    .foregroundStyle(.secondary)
+                Text("Clock Hidden")
+                    .font(.title3.bold())
+                Button("Show Clock") {
+                    model.setWidgetEnabled(true, id: clock.id)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(24)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+        } else {
+            VStack(spacing: 14) {
+                Image(systemName: "clock.badge.plus")
+                    .font(.system(size: 42, weight: .light))
+                    .foregroundStyle(.secondary)
+                Text("No Clock on This Display")
+                    .font(.title3.bold())
+                Text(addClockDescription)
+                    .foregroundStyle(.secondary)
+                Button("Add Digital Clock") {
+                    addClock()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(model.widgetDisplayMode == .perDisplay && selectedDisplay == nil)
+            }
+            .padding(28)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+        }
+    }
+
     private var footerNote: some View {
-        Label(
-            "For this first version, the same clock and position are mirrored across all active wallpaper displays.",
-            systemImage: "info.circle"
-        )
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+        Label(footerText, systemImage: "info.circle")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
     private var inspector: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if let widget = model.digitalClockWidget {
-                    inspectorHeader
-                    appearanceCard(widget)
-                    timeCard(widget)
-                    placementCard(widget)
-                    removalCard
+                if let display = selectedDisplay {
+                    displayHeader(display)
+                    displayCard(display)
+
+                    if let clock = editableClock {
+                        appearanceCard(clock)
+                        timeCard(clock)
+                        placementCard(clock)
+                        removalCard
+                    } else {
+                        addWidgetCard
+                    }
                 } else {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Image(systemName: "square.stack.3d.up")
+                    VStack(alignment: .leading, spacing: 12) {
+                        Image(systemName: "display.trianglebadge.exclamationmark")
                             .font(.system(size: 34, weight: .light))
-                            .foregroundStyle(.tint)
-
-                        Text("Add a Widget")
-                            .font(.title3.bold())
-
-                        Text("Widgets stay behind your desktop icons and never capture mouse input outside this editor.")
                             .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Button("Add Digital Clock") {
-                            let id = model.addDigitalClockWidget()
-                            if let widget = model.widgets.first(where: { $0.id == id }) {
-                                previewPosition = widget.position
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .frame(maxWidth: .infinity)
+                        Text("No Display Selected")
+                            .font(.title3.bold())
+                        Text("Connect or select a display to edit its widget layout.")
+                            .foregroundStyle(.secondary)
                     }
                     .padding(20)
                 }
@@ -202,30 +296,61 @@ struct WidgetsView: View {
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.52))
     }
 
-    private var inspectorHeader: some View {
+    private func displayHeader(_ display: DisplayDescriptor) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: "clock")
+            Image(systemName: display.isBuiltIn ? "laptopcomputer" : "display")
                 .font(.title2)
                 .foregroundStyle(.tint)
                 .frame(width: 30)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("Digital Clock")
+                Text(display.fingerprint.localizedName)
                     .font(.title3.bold())
-                Text("Displayed on every monitor")
+                Text(model.widgetDisplayMode == .mirrored
+                    ? "Mirrored widget layout"
+                    : "Independent widget layout")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
     }
 
-    private func appearanceCard(_ widget: DesktopWidget) -> some View {
+    private func displayCard(_ display: DisplayDescriptor) -> some View {
+        WidgetInspectorCard(title: "Display") {
+            Toggle(
+                "Show widgets on this display",
+                isOn: Binding(
+                    get: { model.widgetDisplayEnabled(for: display.id) },
+                    set: { model.setWidgetsEnabled($0, for: display.id) }
+                )
+            )
+
+            Text(model.widgetDisplayMode == .mirrored
+                ? "This hides the shared clock only on this monitor."
+                : "This hides this monitor’s independent widget layout.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func appearanceCard(_ clock: DesktopWidget) -> some View {
         WidgetInspectorCard(title: "Appearance") {
             Toggle(
                 "Show clock",
                 isOn: Binding(
-                    get: { widget.isEnabled },
-                    set: { model.setWidgetEnabled($0, id: widget.id) }
+                    get: { clock.isEnabled },
+                    set: { model.setWidgetEnabled($0, id: clock.id) }
+                )
+            )
+
+            Divider()
+
+            Toggle(
+                "Show background",
+                isOn: Binding(
+                    get: { clock.digitalClock.showsBackground },
+                    set: { model.setClockShowsBackground($0, id: clock.id) }
                 )
             )
 
@@ -234,8 +359,8 @@ struct WidgetsView: View {
             Picker(
                 "Size",
                 selection: Binding(
-                    get: { widget.size },
-                    set: { model.setWidgetSize($0, id: widget.id) }
+                    get: { clock.size },
+                    set: { model.setWidgetSize($0, id: clock.id) }
                 )
             ) {
                 Text("Small").tag(DesktopWidgetSize.small)
@@ -246,13 +371,13 @@ struct WidgetsView: View {
         }
     }
 
-    private func timeCard(_ widget: DesktopWidget) -> some View {
+    private func timeCard(_ clock: DesktopWidget) -> some View {
         WidgetInspectorCard(title: "Time") {
             Toggle(
                 "24-hour time",
                 isOn: Binding(
-                    get: { widget.digitalClock.uses24HourTime },
-                    set: { model.setClockUses24HourTime($0, id: widget.id) }
+                    get: { clock.digitalClock.uses24HourTime },
+                    set: { model.setClockUses24HourTime($0, id: clock.id) }
                 )
             )
 
@@ -261,14 +386,14 @@ struct WidgetsView: View {
             Toggle(
                 "Show seconds",
                 isOn: Binding(
-                    get: { widget.digitalClock.showsSeconds },
-                    set: { model.setClockShowsSeconds($0, id: widget.id) }
+                    get: { clock.digitalClock.showsSeconds },
+                    set: { model.setClockShowsSeconds($0, id: clock.id) }
                 )
             )
         }
     }
 
-    private func placementCard(_ widget: DesktopWidget) -> some View {
+    private func placementCard(_ clock: DesktopWidget) -> some View {
         WidgetInspectorCard(title: "Placement") {
             Text("Drag the clock in the preview to place it.")
                 .font(.callout)
@@ -278,8 +403,23 @@ struct WidgetsView: View {
             Button("Reset to Top Center") {
                 let position = NormalizedWidgetPosition(x: 0.5, y: 0.18)
                 previewPosition = position
-                model.setWidgetPosition(position, id: widget.id)
+                model.setWidgetPosition(position, id: clock.id)
             }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var addWidgetCard: some View {
+        WidgetInspectorCard(title: "Widget") {
+            Text(addClockDescription)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button("Add Digital Clock") {
+                addClock()
+            }
+            .buttonStyle(.borderedProminent)
             .frame(maxWidth: .infinity)
         }
     }
@@ -318,42 +458,87 @@ struct WidgetsView: View {
         }
     }
 
+    private var selectedDisplay: DisplayDescriptor? {
+        guard let id = model.selectedDisplayID else { return nil }
+        return model.displayTopology.display(id: id)
+    }
+
+    private var selectedDisplayWidgetsEnabled: Bool {
+        guard let id = selectedDisplay?.id else { return true }
+        return model.widgetDisplayEnabled(for: id)
+    }
+
+    private var editableClock: DesktopWidget? {
+        model.digitalClockWidget(for: selectedDisplay?.id)
+    }
+
     private var representativeWallpaper: WallpaperMetadata? {
-        switch model.state.settings.presentationMode {
-        case .duplicate, .span:
-            if let wallpaper = model.wallpaper(id: model.state.sharedWallpaperID) {
+        guard let display = selectedDisplay else {
+            return model.assignableWallpapers.first
+        }
+
+        if model.state.settings.presentationMode == .perDisplay {
+            let assignment = model.displayAssignment(for: display)
+            if let wallpaper = model.wallpaper(id: assignment.wallpaperID) {
                 return wallpaper
             }
-        case .perDisplay:
-            if let mainDisplay = model.displayTopology.displays.first(where: { $0.isMain })
-                ?? model.displayTopology.displays.first {
-                let assignment = model.displayAssignment(for: mainDisplay)
-                if let wallpaper = model.wallpaper(id: assignment.wallpaperID) {
-                    return wallpaper
-                }
-            }
+        } else if let wallpaper = model.wallpaper(id: model.state.sharedWallpaperID) {
+            return wallpaper
         }
 
         return model.assignableWallpapers.first
     }
 
-    private func previewWidget(_ widget: DesktopWidget) -> DesktopWidget {
-        var copy = widget
+    private var modeDescription: String {
+        switch model.widgetDisplayMode {
+        case .mirrored:
+            return "Edit one shared clock layout, then hide it on individual monitors when needed."
+        case .perDisplay:
+            return "Each monitor keeps its own clock, position, size, and time settings."
+        }
+    }
+
+    private var footerText: String {
+        switch model.widgetDisplayMode {
+        case .mirrored:
+            return "Mirror keeps one widget layout synchronized across displays while still allowing individual monitors to hide widgets."
+        case .perDisplay:
+            return "Per Display lets every monitor keep a different clock layout or no clock at all."
+        }
+    }
+
+    private var addClockDescription: String {
+        model.widgetDisplayMode == .mirrored
+            ? "Add one clock that mirrors across enabled displays."
+            : "Add a clock only to the selected display."
+    }
+
+    private var removeConfirmationTitle: String {
+        model.widgetDisplayMode == .mirrored
+            ? "Remove the shared clock?"
+            : "Remove the clock from this display?"
+    }
+
+    private func previewWidget(_ clock: DesktopWidget) -> DesktopWidget {
+        var copy = clock
         copy.position = previewPosition
         return copy
+    }
+
+    private func addClock() {
+        let id = model.addDigitalClockWidget(for: selectedDisplay?.id)
+        if let clock = model.digitalClockWidget(for: selectedDisplay?.id),
+           clock.id == id {
+            previewPosition = clock.position
+        }
     }
 
     private func normalizedPosition(
         for location: CGPoint,
         in size: CGSize
     ) -> NormalizedWidgetPosition {
-        let minimumX = 0.10
-        let maximumX = 0.90
-        let minimumY = 0.12
-        let maximumY = 0.88
-
-        let x = min(max(location.x / max(size.width, 1), minimumX), maximumX)
-        let y = min(max(location.y / max(size.height, 1), minimumY), maximumY)
+        let x = min(max(location.x / max(size.width, 1), 0.10), 0.90)
+        let y = min(max(location.y / max(size.height, 1), 0.12), 0.88)
         return NormalizedWidgetPosition(x: x, y: y)
     }
 
@@ -366,8 +551,15 @@ struct WidgetsView: View {
     }
 
     private func syncPreviewPosition() {
-        previewPosition = model.digitalClockWidget?.position
-            ?? NormalizedWidgetPosition()
+        previewPosition = editableClock?.position ?? NormalizedWidgetPosition()
+    }
+
+    private func selectInitialDisplayIfNeeded() {
+        let activeIDs = model.displayTopology.activeDisplayIDs
+        if let id = model.selectedDisplayID, activeIDs.contains(id) { return }
+        model.selectedDisplayID = model.displayTopology.displays
+            .first(where: { $0.isMain })?.id
+            ?? model.displayTopology.displays.first?.id
     }
 }
 

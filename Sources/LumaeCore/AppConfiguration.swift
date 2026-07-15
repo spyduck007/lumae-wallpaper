@@ -132,6 +132,9 @@ public struct PersistedApplicationState: Codable, Hashable, Sendable {
     public var playlists: [WallpaperPlaylist]?
     public var activePlaylistID: UUID?
     public var widgets: [DesktopWidget]?
+    public var widgetDisplayMode: WidgetDisplayMode?
+    public var widgetDisplayConfigurations: [WidgetDisplayConfiguration]?
+    public var widgetPerDisplayInitialized: Bool?
 
     public init(
         schemaVersion: Int = 1,
@@ -142,7 +145,10 @@ public struct PersistedApplicationState: Codable, Hashable, Sendable {
         lastKnownTopology: DisplayTopology? = nil,
         playlists: [WallpaperPlaylist]? = nil,
         activePlaylistID: UUID? = nil,
-        widgets: [DesktopWidget]? = nil
+        widgets: [DesktopWidget]? = nil,
+        widgetDisplayMode: WidgetDisplayMode? = nil,
+        widgetDisplayConfigurations: [WidgetDisplayConfiguration]? = nil,
+        widgetPerDisplayInitialized: Bool? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.wallpapers = wallpapers
@@ -153,5 +159,8 @@ public struct PersistedApplicationState: Codable, Hashable, Sendable {
         self.playlists = playlists
         self.activePlaylistID = activePlaylistID
         self.widgets = widgets
+        self.widgetDisplayMode = widgetDisplayMode
+        self.widgetDisplayConfigurations = widgetDisplayConfigurations
+        self.widgetPerDisplayInitialized = widgetPerDisplayInitialized
     }
 }

@@ -28,4 +28,25 @@ final class ModelTests:XCTestCase {
   let decoded=try JSONDecoder().decode(PersistedApplicationState.self,from:JSONEncoder().encode(state))
   XCTAssertEqual(decoded.widgets,[widget])
  }
+
+ func testClockBackgroundDefaultsOnForOlderState() throws {
+  let json=Data("{\"uses24HourTime\":false,\"showsSeconds\":true}".utf8)
+  let settings=try JSONDecoder().decode(DigitalClockWidgetSettings.self,from:json)
+  XCTAssertTrue(settings.showsBackground)
+ }
+ func testMirroredWidgetCanBeDisabledPerDisplay(){
+  let fingerprint=DisplayFingerprint(stableID:"one",localizedName:"One")
+  let display=DisplayDescriptor(fingerprint:fingerprint,framePoints:LRect(x:0,y:0,width:100,height:100),visibleFramePoints:LRect(x:0,y:0,width:100,height:100),pixelSize:LSize(width:100,height:100),backingScaleFactor:1)
+  let clock=DesktopWidget(kind:.digitalClock)
+  let config=WidgetDisplayConfiguration(displayFingerprint:fingerprint,isEnabled:false)
+  XCTAssertTrue(WidgetDisplayResolver.widgets(for:display,mode:.mirrored,mirroredWidgets:[clock],configurations:[config]).isEmpty)
+ }
+ func testPerDisplayWidgetResolutionUsesFingerprintFallback(){
+  let saved=DisplayFingerprint(stableID:"old",vendorID:1,modelID:2,serialNumber:3,localizedName:"Monitor")
+  let current=DisplayFingerprint(stableID:"new",vendorID:1,modelID:2,serialNumber:3,localizedName:"Monitor")
+  let display=DisplayDescriptor(fingerprint:current,framePoints:LRect(x:0,y:0,width:100,height:100),visibleFramePoints:LRect(x:0,y:0,width:100,height:100),pixelSize:LSize(width:100,height:100),backingScaleFactor:1)
+  let clock=DesktopWidget(kind:.digitalClock)
+  let config=WidgetDisplayConfiguration(displayFingerprint:saved,widgets:[clock])
+  XCTAssertEqual(WidgetDisplayResolver.widgets(for:display,mode:.perDisplay,mirroredWidgets:[],configurations:[config]),[clock])
+ }
 }

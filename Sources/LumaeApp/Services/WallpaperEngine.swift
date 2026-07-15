@@ -84,7 +84,8 @@ final class WallpaperEngine {
                 scalingMode: assignment.scalingMode,
                 maxFrameRate: assignment.maxFrameRate
                     ?? state.settings.maximumFrameRate,
-                audioBehavior: state.settings.audioBehavior
+                audioBehavior: state.settings.audioBehavior,
+                widgets: resolvedWidgets(for: display, state: state)
             )
         }
     }
@@ -126,7 +127,7 @@ final class WallpaperEngine {
                     sourceSize: sourceSize,
                     mode: span ? .stretch : state.settings.defaultScalingMode,
                     spanSlice: slice,
-                    widgets: state.widgets ?? []
+                    widgets: resolvedWidgets(for: display, state: state)
                 )
             }
 
@@ -145,7 +146,7 @@ final class WallpaperEngine {
                     sourceSize: sourceSize,
                     mode: span ? .stretch : state.settings.defaultScalingMode,
                     spanSlice: slice,
-                    widgets: state.widgets ?? []
+                    widgets: resolvedWidgets(for: display, state: state)
                 )
             }
             sharedVideo.play()
@@ -160,7 +161,8 @@ final class WallpaperEngine {
         on display: DisplayDescriptor,
         scalingMode: WallpaperScalingMode,
         maxFrameRate: Int,
-        audioBehavior: AudioBehavior
+        audioBehavior: AudioBehavior,
+        widgets: [DesktopWidget]
     ) throws {
         let sourceSize = LSize(
             width: Double(wallpaper.pixelWidth),
@@ -177,7 +179,7 @@ final class WallpaperEngine {
                 display: display,
                 sourceSize: sourceSize,
                 mode: scalingMode,
-                widgets: currentState?.widgets ?? []
+                widgets: widgets
             )
 
         case .video:
@@ -192,7 +194,7 @@ final class WallpaperEngine {
                 display: display,
                 sourceSize: sourceSize,
                 mode: scalingMode,
-                widgets: currentState?.widgets ?? []
+                widgets: widgets
             )
             displayVideos[display.id] = playback
             playback.play()
@@ -200,6 +202,18 @@ final class WallpaperEngine {
         case .unsupported:
             throw EngineError.unsupported
         }
+    }
+
+    private func resolvedWidgets(
+        for display: DisplayDescriptor,
+        state: PersistedApplicationState
+    ) -> [DesktopWidget] {
+        WidgetDisplayResolver.widgets(
+            for: display,
+            mode: state.widgetDisplayMode ?? .mirrored,
+            mirroredWidgets: state.widgets ?? [],
+            configurations: state.widgetDisplayConfigurations ?? []
+        )
     }
 
     private func stopAllPlayback() {

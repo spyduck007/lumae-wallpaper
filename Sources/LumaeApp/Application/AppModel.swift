@@ -349,6 +349,7 @@ final class AppModel: ObservableObject {
         displayTopology = topology
         state.lastKnownTopology = topology
         reconcileAssignments(onto: topology)
+        reconcileWidgetDisplays(onto: topology)
 
         if selectedDisplayID == nil
             || !topology.activeDisplayIDs.contains(selectedDisplayID ?? "") {
@@ -752,66 +753,256 @@ extension AppModel {
 }
 
 
+
 extension AppModel {
     var widgets: [DesktopWidget] {
         get { state.widgets ?? [] }
         set { state.widgets = newValue }
     }
 
+    var widgetDisplayMode: WidgetDisplayMode {
+        state.widgetDisplayMode ?? .mirrored
+    }
+
+    var widgetDisplayConfigurations: [WidgetDisplayConfiguration] {
+        get { state.widgetDisplayConfigurations ?? [] }
+        set { state.widgetDisplayConfigurations = newValue }
+    }
+
     var digitalClockWidget: DesktopWidget? {
         widgets.first { $0.kind == .digitalClock }
     }
 
+    func widgetDisplayEnabled(for displayID: String) -> Bool {
+        guard let display = displayTopology.display(id: displayID) else { return true }
+        return WidgetDisplayResolver.bestConfiguration(
+            for: display.fingerprint,
+            in: widgetDisplayConfigurations
+        )?.isEnabled ?? true
+    }
+
+    func widgetsForDisplay(_ displayID: String) -> [DesktopWidget] {
+        guard let display = displayTopology.display(id: displayID) else { return [] }
+        return WidgetDisplayResolver.widgets(
+            for: display,
+            mode: widgetDisplayMode,
+            mirroredWidgets: widgets,
+            configurations: widgetDisplayConfigurations
+        )
+    }
+
+    func digitalClockWidget(for displayID: String?) -> DesktopWidget? {
+        if widgetDisplayMode == .mirrored {
+            return digitalClockWidget
+        }
+        guard let displayID else { return nil }
+        return widgetsForDisplay(displayID).first { $0.kind == .digitalClock }
+    }
+
+    func setWidgetDisplayMode(_ mode: WidgetDisplayMode) {
+        guard widgetDisplayMode != mode else { return }
+        if mode == .perDisplay {
+            initializePerDisplayWidgetsIfNeeded()
+        }
+        state.widgetDisplayMode = mode
+        scheduleConfigurationApply()
+    }
+
+    func setWidgetsEnabled(_ enabled: Bool, for displayID: String) {
+        guard let index = widgetConfigurationIndex(for: displayID, createIfMissing: true) else {
+            return
+        }
+        var configurations = widgetDisplayConfigurations
+        configurations[index].isEnabled = enabled
+        widgetDisplayConfigurations = configurations
+        scheduleConfigurationApply()
+    }
+
     @discardableResult
-    func addDigitalClockWidget() -> UUID {
-        if let existing = digitalClockWidget {
+    func addDigitalClockWidget(for displayID: String? = nil) -> UUID {
+        if widgetDisplayMode == .mirrored {
+            if let existing = digitalClockWidget { return existing.id }
+            let widget = DesktopWidget(kind: .digitalClock)
+            widgets.append(widget)
+            scheduleConfigurationApply()
+            return widget.id
+        }
+
+        let targetID = displayID
+            ?? selectedDisplayID
+            ?? displayTopology.displays.first(where: { $0.isMain })?.id
+            ?? displayTopology.displays.first?.id
+        guard let targetID,
+              let index = widgetConfigurationIndex(
+                for: targetID,
+                createIfMissing: true
+              ) else {
+            let widget = DesktopWidget(kind: .digitalClock)
+            widgets.append(widget)
+            scheduleConfigurationApply()
+            return widget.id
+        }
+
+        var configurations = widgetDisplayConfigurations
+        if let existing = configurations[index].widgets.first(where: {
+            $0.kind == .digitalClock
+        }) {
             return existing.id
         }
 
-        let widget = DesktopWidget(kind: .digitalClock)
-        widgets.append(widget)
+        let source = digitalClockWidget ?? DesktopWidget(kind: .digitalClock)
+        let widget = source.duplicated()
+        configurations[index].widgets.append(widget)
+        widgetDisplayConfigurations = configurations
         scheduleConfigurationApply()
         return widget.id
     }
 
     func removeWidget(id: UUID) {
-        widgets.removeAll { $0.id == id }
+        var mirrored = widgets
+        mirrored.removeAll { $0.id == id }
+        widgets = mirrored
+
+        var configurations = widgetDisplayConfigurations
+        for index in configurations.indices {
+            configurations[index].widgets.removeAll { $0.id == id }
+        }
+        widgetDisplayConfigurations = configurations
         scheduleConfigurationApply()
     }
 
     func setWidgetEnabled(_ enabled: Bool, id: UUID) {
-        guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
-        widgets[index].isEnabled = enabled
-        scheduleConfigurationApply()
+        updateWidget(id: id) { $0.isEnabled = enabled }
     }
 
     func setWidgetPosition(_ position: NormalizedWidgetPosition, id: UUID) {
-        guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
-        widgets[index].position = position
-        scheduleConfigurationApply()
+        updateWidget(id: id) { $0.position = position }
     }
 
     func setWidgetSize(_ size: DesktopWidgetSize, id: UUID) {
-        guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
-        widgets[index].size = size
-        scheduleConfigurationApply()
+        updateWidget(id: id) { $0.size = size }
     }
 
     func setClockUses24HourTime(_ enabled: Bool, id: UUID) {
-        guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
-        widgets[index].digitalClock.uses24HourTime = enabled
-        scheduleConfigurationApply()
+        updateWidget(id: id) { $0.digitalClock.uses24HourTime = enabled }
     }
 
     func setClockShowsSeconds(_ enabled: Bool, id: UUID) {
-        guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
-        widgets[index].digitalClock.showsSeconds = enabled
-        scheduleConfigurationApply()
+        updateWidget(id: id) { $0.digitalClock.showsSeconds = enabled }
+    }
+
+    func setClockShowsBackground(_ enabled: Bool, id: UUID) {
+        updateWidget(id: id) { $0.digitalClock.showsBackground = enabled }
+    }
+
+    private func updateWidget(
+        id: UUID,
+        change: (inout DesktopWidget) -> Void
+    ) {
+        var mirrored = widgets
+        if let index = mirrored.firstIndex(where: { $0.id == id }) {
+            change(&mirrored[index])
+            widgets = mirrored
+            scheduleConfigurationApply()
+            return
+        }
+
+        var configurations = widgetDisplayConfigurations
+        for configurationIndex in configurations.indices {
+            if let widgetIndex = configurations[configurationIndex]
+                .widgets.firstIndex(where: { $0.id == id }) {
+                change(&configurations[configurationIndex].widgets[widgetIndex])
+                widgetDisplayConfigurations = configurations
+                scheduleConfigurationApply()
+                return
+            }
+        }
     }
 
     private func normalizeWidgetState() {
-        if state.widgets == nil {
-            state.widgets = []
+        if state.widgets == nil { state.widgets = [] }
+        if state.widgetDisplayMode == nil { state.widgetDisplayMode = .mirrored }
+        if state.widgetDisplayConfigurations == nil {
+            state.widgetDisplayConfigurations = []
+        }
+        if state.widgetPerDisplayInitialized == nil {
+            state.widgetPerDisplayInitialized = false
         }
     }
+
+    private func initializePerDisplayWidgetsIfNeeded() {
+        reconcileWidgetDisplays(onto: displayTopology)
+        guard state.widgetPerDisplayInitialized != true else { return }
+
+        var configurations = widgetDisplayConfigurations
+        for index in configurations.indices {
+            if configurations[index].widgets.isEmpty {
+                configurations[index].widgets = widgets.map { $0.duplicated() }
+            }
+        }
+        widgetDisplayConfigurations = configurations
+        state.widgetPerDisplayInitialized = true
+    }
+
+    private func reconcileWidgetDisplays(onto topology: DisplayTopology) {
+        guard !topology.displays.isEmpty else { return }
+
+        var configurations = widgetDisplayConfigurations
+        for display in topology.displays {
+            if WidgetDisplayResolver.bestConfiguration(
+                for: display.fingerprint,
+                in: configurations
+            ) != nil {
+                continue
+            }
+
+            let initialWidgets = widgetDisplayMode == .perDisplay
+                ? widgets.map { $0.duplicated() }
+                : []
+            configurations.append(
+                WidgetDisplayConfiguration(
+                    displayFingerprint: display.fingerprint,
+                    widgets: initialWidgets
+                )
+            )
+        }
+        widgetDisplayConfigurations = configurations
+    }
+
+    private func widgetConfigurationIndex(
+        for displayID: String,
+        createIfMissing: Bool
+    ) -> Int? {
+        guard let display = displayTopology.display(id: displayID) else { return nil }
+        var configurations = widgetDisplayConfigurations
+
+        if let exact = configurations.firstIndex(where: {
+            $0.displayFingerprint.stableID == display.fingerprint.stableID
+        }) {
+            return exact
+        }
+
+        if let matched = WidgetDisplayResolver.bestConfiguration(
+            for: display.fingerprint,
+            in: configurations
+        ), let index = configurations.firstIndex(of: matched) {
+            configurations[index].displayFingerprint = display.fingerprint
+            widgetDisplayConfigurations = configurations
+            return index
+        }
+
+        guard createIfMissing else { return nil }
+        let initialWidgets = widgetDisplayMode == .perDisplay
+            ? widgets.map { $0.duplicated() }
+            : []
+        configurations.append(
+            WidgetDisplayConfiguration(
+                displayFingerprint: display.fingerprint,
+                widgets: initialWidgets
+            )
+        )
+        widgetDisplayConfigurations = configurations
+        return configurations.indices.last
+    }
+
 }
