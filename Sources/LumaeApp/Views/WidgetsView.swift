@@ -166,14 +166,21 @@ struct WidgetsView: View {
                                                 draggingWidgetID == widget.id ? 0.95 : 0.62
                                             ),
                                             style: StrokeStyle(
-                                                lineWidth: 2,
-                                                dash: [7, 5]
+                                                lineWidth: 2 / previewScale(in: proxy.size),
+                                                dash: [
+                                                    7 / previewScale(in: proxy.size),
+                                                    5 / previewScale(in: proxy.size)
+                                                ]
                                             )
                                         )
                                         .padding(-7)
                                     }
                                 }
                                 .contentShape(Rectangle())
+                                .scaleEffect(
+                                    previewScale(in: proxy.size),
+                                    anchor: .center
+                                )
                                 .position(
                                     x: proxy.size.width * previewPosition(for: widget).x,
                                     y: proxy.size.height * previewPosition(for: widget).y
@@ -196,7 +203,7 @@ struct WidgetsView: View {
                         .stroke(Color.primary.opacity(0.09), lineWidth: 1)
                 }
             }
-            .aspectRatio(16 / 10, contentMode: .fit)
+            .aspectRatio(previewAspectRatio, contentMode: .fit)
         }
         .padding(18)
         .background(
@@ -561,6 +568,30 @@ struct WidgetsView: View {
                     .foregroundStyle(.white.opacity(0.55))
             }
         }
+    }
+
+    private var previewAspectRatio: CGFloat {
+        guard let display = selectedDisplay,
+              display.framePoints.size.height > 0 else {
+            return 16 / 10
+        }
+        return CGFloat(
+            display.framePoints.size.width / display.framePoints.size.height
+        )
+    }
+
+    private func previewScale(in previewSize: CGSize) -> CGFloat {
+        guard let display = selectedDisplay,
+              display.framePoints.size.width > 0,
+              display.framePoints.size.height > 0 else {
+            return 1
+        }
+
+        let horizontalScale = previewSize.width
+            / CGFloat(display.framePoints.size.width)
+        let verticalScale = previewSize.height
+            / CGFloat(display.framePoints.size.height)
+        return max(min(horizontalScale, verticalScale), 0.01)
     }
 
     private var selectedDisplay: DisplayDescriptor? {
