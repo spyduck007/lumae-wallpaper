@@ -57,13 +57,15 @@ final class AppModel: ObservableObject {
             self.displayTopology = topology
             self.reconcileAssignments(onto: topology)
             self.reconcileWidgetDisplays(onto: topology)
-            if self.state.settings.restoreLastConfiguration {
+            if let defaultSceneID = self.state.defaultSceneID {
+                await self.activateScene(id: defaultSceneID, persist: false)
+            } else if self.state.settings.restoreLastConfiguration {
                 await self.engine.restore(
                     state: self.state,
                     topology: self.displayService.currentTopology
                 )
+                self.schedulePlaylistRotation()
             }
-            self.schedulePlaylistRotation()
         }
     }
 
@@ -75,6 +77,7 @@ final class AppModel: ObservableObject {
             state = try await store.load()
             normalizePlaylistState()
             normalizeWidgetState()
+            normalizeSceneState()
             state.wallpapers = state.wallpapers.map { item in
                 var copy = item
                 copy.isMissing = !FileManager.default.fileExists(
@@ -1344,5 +1347,260 @@ extension AppModel {
         ))
         widgetDisplayConfigurations = configurations
         return configurations.indices.last
+    }
+}
+
+extension AppModel {
+    var scenes: [DesktopScene] {
+        get { state.scenes ?? [] }
+        set { state.scenes = newValue }
+    }
+
+    var activeScene: DesktopScene? {
+        guard let id = state.activeSceneID else { return nil }
+        return scenes.first { $0.id == id }
+    }
+
+    var defaultScene: DesktopScene? {
+        guard let id = state.defaultSceneID else { return nil }
+        return scenes.first { $0.id == id }
+    }
+
+    var activeSceneHasChanges: Bool {
+        guard let activeScene else { return false }
+        return activeScene.configuration != currentSceneConfiguration()
+    }
+
+    func scene(id: UUID) -> DesktopScene? {
+        scenes.first { $0.id == id }
+    }
+
+    @discardableResult
+    func createScene(named proposedName: String = "New Scene") -> UUID {
+        let now = Date()
+        let scene = DesktopScene(
+            name: uniqueSceneName(proposedName),
+            configuration: currentSceneConfiguration(),
+            createdAt: now,
+            modifiedAt: now,
+            lastActivatedAt: now
+        )
+        scenes.append(scene)
+        state.activeSceneID = scene.id
+        persistSoon()
+        return scene.id
+    }
+
+    @discardableResult
+    func duplicateScene(id: UUID) -> UUID? {
+        guard let source = scene(id: id) else { return nil }
+        let now = Date()
+        let duplicate = DesktopScene(
+            name: uniqueSceneName("\(source.name) Copy"),
+            configuration: source.configuration,
+            createdAt: now,
+            modifiedAt: now
+        )
+        scenes.append(duplicate)
+        persistSoon()
+        return duplicate.id
+    }
+
+    func renameScene(id: UUID, to proposedName: String) -> Bool {
+        let trimmed = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorMessage = "Scene names cannot be empty."
+            return false
+        }
+        guard let index = scenes.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        let duplicateExists = scenes.contains {
+            $0.id != id && $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
+        }
+        guard !duplicateExists else {
+            errorMessage = "A scene named “\(trimmed)” already exists."
+            return false
+        }
+        scenes[index].name = trimmed
+        scenes[index].modifiedAt = Date()
+        persistSoon()
+        return true
+    }
+
+    func saveCurrentSetup(toScene id: UUID) {
+        guard let index = scenes.firstIndex(where: { $0.id == id }) else { return }
+        let now = Date()
+        scenes[index].configuration = currentSceneConfiguration()
+        scenes[index].modifiedAt = now
+        scenes[index].lastActivatedAt = now
+        state.activeSceneID = id
+        persistSoon()
+    }
+
+    func deleteScene(id: UUID) {
+        scenes.removeAll { $0.id == id }
+        if state.activeSceneID == id {
+            state.activeSceneID = nil
+        }
+        if state.defaultSceneID == id {
+            state.defaultSceneID = nil
+        }
+        persistSoon()
+    }
+
+    func setDefaultScene(id: UUID?) {
+        guard id == nil || scenes.contains(where: { $0.id == id }) else { return }
+        state.defaultSceneID = id
+        persistSoon()
+    }
+
+    func activateScene(id: UUID) async {
+        await activateScene(id: id, persist: true)
+    }
+
+    func sceneMissingWallpaperCount(_ scene: DesktopScene) -> Int {
+        let unavailableIDs = Set(
+            state.wallpapers
+                .filter { $0.isMissing || $0.kind == .unsupported }
+                .map(\.id)
+        )
+        let unknownIDs = scene.configuration.referencedWallpaperIDs.subtracting(
+            Set(state.wallpapers.map(\.id))
+        )
+        return scene.configuration.referencedWallpaperIDs
+            .intersection(unavailableIDs)
+            .count + unknownIDs.count
+    }
+
+    func currentSceneConfiguration() -> SceneConfiguration {
+        SceneConfiguration(
+            playback: ScenePlaybackSettings(
+                presentationMode: state.settings.presentationMode,
+                defaultScalingMode: state.settings.defaultScalingMode,
+                videoQuality: state.settings.videoQuality,
+                maximumFrameRate: state.settings.maximumFrameRate,
+                audioBehavior: state.settings.audioBehavior,
+                synchronizedDuplicatePlayback: state.settings.synchronizedDuplicatePlayback
+            ),
+            sharedWallpaperID: state.sharedWallpaperID,
+            assignments: state.assignments,
+            playlists: sceneSnapshotPlaylists(),
+            activePlaylistID: state.activePlaylistID,
+            widgets: widgets,
+            widgetDisplayMode: widgetDisplayMode,
+            widgetDisplayConfigurations: widgetDisplayConfigurations,
+            widgetPerDisplayInitialized: state.widgetPerDisplayInitialized ?? false,
+            defaultWidgetStyle: defaultWidgetStyle
+        )
+    }
+
+    private func activateScene(id: UUID, persist: Bool) async {
+        guard let index = scenes.firstIndex(where: { $0.id == id }) else { return }
+        let previousState = state
+        let previousConfiguration = currentSceneConfiguration()
+        let configuration = scenes[index].configuration
+        let requiresWallpaperRebuild = previousConfiguration.playback != configuration.playback
+            || previousConfiguration.sharedWallpaperID != configuration.sharedWallpaperID
+            || previousConfiguration.assignments != configuration.assignments
+
+        configurationApplyTask?.cancel()
+        widgetRefreshTask?.cancel()
+        playlistRotationTask?.cancel()
+        playlistRotationTask = nil
+
+        state.settings.presentationMode = configuration.playback.presentationMode
+        state.settings.defaultScalingMode = configuration.playback.defaultScalingMode
+        state.settings.videoQuality = configuration.playback.videoQuality
+        state.settings.maximumFrameRate = configuration.playback.maximumFrameRate
+        state.settings.audioBehavior = configuration.playback.audioBehavior
+        state.settings.synchronizedDuplicatePlayback = configuration.playback.synchronizedDuplicatePlayback
+        state.sharedWallpaperID = configuration.sharedWallpaperID
+        state.assignments = configuration.assignments
+        state.playlists = configuration.playlists
+        state.activePlaylistID = configuration.activePlaylistID
+        state.widgets = configuration.widgets
+        state.widgetDisplayMode = configuration.widgetDisplayMode
+        state.widgetDisplayConfigurations = configuration.widgetDisplayConfigurations
+        state.widgetPerDisplayInitialized = configuration.widgetPerDisplayInitialized
+        state.defaultWidgetStyle = configuration.defaultWidgetStyle
+        state.activeSceneID = id
+
+        normalizePlaylistState()
+        normalizeWidgetState()
+        reconcileAssignments(onto: displayTopology)
+        reconcileWidgetDisplays(onto: displayTopology)
+
+        if let activeID = state.activePlaylistID,
+           let playlistIndex = playlists.firstIndex(where: { $0.id == activeID }),
+           playlists[playlistIndex].isRunning {
+            playlists[playlistIndex].lastAdvancedAt = Date()
+        }
+
+        do {
+            if requiresWallpaperRebuild {
+                try await engine.applyConfiguration(
+                    state: state,
+                    topology: displayTopology
+                )
+            } else {
+                engine.updateWidgets(
+                    state: state,
+                    topology: displayTopology
+                )
+            }
+            scenes[index].lastActivatedAt = Date()
+            if persist {
+                try await save()
+            }
+            schedulePlaylistRotation()
+        } catch {
+            state = previousState
+            normalizePlaylistState()
+            normalizeWidgetState()
+            normalizeSceneState()
+            reconcileAssignments(onto: displayTopology)
+            reconcileWidgetDisplays(onto: displayTopology)
+            try? await engine.applyConfiguration(
+                state: state,
+                topology: displayTopology
+            )
+            schedulePlaylistRotation()
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func sceneSnapshotPlaylists() -> [WallpaperPlaylist] {
+        playlists.map { playlist in
+            var copy = playlist
+            copy.cursor = 0
+            copy.currentWallpaperID = nil
+            copy.history = []
+            copy.lastAdvancedAt = nil
+            return copy
+        }
+    }
+
+    private func normalizeSceneState() {
+        if state.scenes == nil { state.scenes = [] }
+        let ids = Set(scenes.map(\.id))
+        if let activeID = state.activeSceneID, !ids.contains(activeID) {
+            state.activeSceneID = nil
+        }
+        if let defaultID = state.defaultSceneID, !ids.contains(defaultID) {
+            state.defaultSceneID = nil
+        }
+    }
+
+    private func uniqueSceneName(_ proposedName: String) -> String {
+        let trimmed = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = trimmed.isEmpty ? "New Scene" : trimmed
+        let names = Set(scenes.map { $0.name.lowercased() })
+        guard names.contains(base.lowercased()) else { return base }
+        var suffix = 2
+        while names.contains("\(base) \(suffix)".lowercased()) {
+            suffix += 1
+        }
+        return "\(base) \(suffix)"
     }
 }

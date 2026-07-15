@@ -212,4 +212,74 @@ final class ModelTests:XCTestCase {
  func testWidgetVisualStylesComplete(){
   XCTAssertEqual(Set(WidgetVisualStyle.allCases),Set([.glass,.clear,.highContrast,.none]))
  }
+
+ func testSceneConfigurationPersistsCompleteDesktopState() throws {
+  let wallpaperID=UUID()
+  let fingerprint=DisplayFingerprint(stableID:"display",localizedName:"Display")
+  let assignment=DisplayAssignment(displayFingerprint:fingerprint,wallpaperID:wallpaperID)
+  let widget=DesktopWidget(kind:.digitalClock,style:.clear)
+  let playlist=WallpaperPlaylist(name:"Focus",wallpaperIDs:[wallpaperID],isRunning:true)
+  let configuration=SceneConfiguration(
+   playback:ScenePlaybackSettings(
+    presentationMode:.perDisplay,
+    defaultScalingMode:.fill,
+    videoQuality:.balanced,
+    maximumFrameRate:60,
+    audioBehavior:.muted,
+    synchronizedDuplicatePlayback:true
+   ),
+   sharedWallpaperID:wallpaperID,
+   assignments:[assignment],
+   playlists:[playlist],
+   activePlaylistID:playlist.id,
+   widgets:[widget],
+   widgetDisplayMode:.mirrored,
+   widgetDisplayConfigurations:[],
+   widgetPerDisplayInitialized:false,
+   defaultWidgetStyle:.glass
+  )
+  let scene=DesktopScene(name:"Work",configuration:configuration)
+  let decoded=try JSONDecoder().decode(DesktopScene.self,from:JSONEncoder().encode(scene))
+  XCTAssertEqual(decoded,scene)
+  XCTAssertEqual(decoded.configuration.referencedWallpaperIDs,[wallpaperID])
+ }
+ func testSceneStateIsBackwardCompatible() throws {
+  let state=PersistedApplicationState()
+  let encoded=try JSONEncoder().encode(state)
+  var object=try XCTUnwrap(JSONSerialization.jsonObject(with:encoded) as? [String:Any])
+  object.removeValue(forKey:"scenes")
+  object.removeValue(forKey:"activeSceneID")
+  object.removeValue(forKey:"defaultSceneID")
+  let legacy=try JSONSerialization.data(withJSONObject:object)
+  let decoded=try JSONDecoder().decode(PersistedApplicationState.self,from:legacy)
+  XCTAssertNil(decoded.scenes)
+  XCTAssertNil(decoded.activeSceneID)
+  XCTAssertNil(decoded.defaultSceneID)
+ }
+ func testSceneReferencedWallpapersIncludesAssignmentsAndPlaylists(){
+  let shared=UUID(), assigned=UUID(), playlistID=UUID(), current=UUID()
+  let fingerprint=DisplayFingerprint(stableID:"display",localizedName:"Display")
+  var playlist=WallpaperPlaylist(name:"Rotation",wallpaperIDs:[playlistID])
+  playlist.currentWallpaperID=current
+  let configuration=SceneConfiguration(
+   playback:ScenePlaybackSettings(
+    presentationMode:.duplicate,
+    defaultScalingMode:.fit,
+    videoQuality:.efficiency,
+    maximumFrameRate:30,
+    audioBehavior:.muted,
+    synchronizedDuplicatePlayback:true
+   ),
+   sharedWallpaperID:shared,
+   assignments:[DisplayAssignment(displayFingerprint:fingerprint,wallpaperID:assigned)],
+   playlists:[playlist],
+   activePlaylistID:playlist.id,
+   widgets:[],
+   widgetDisplayMode:.mirrored,
+   widgetDisplayConfigurations:[],
+   widgetPerDisplayInitialized:false,
+   defaultWidgetStyle:.glass
+  )
+  XCTAssertEqual(configuration.referencedWallpaperIDs,[shared,assigned,playlistID,current])
+ }
 }

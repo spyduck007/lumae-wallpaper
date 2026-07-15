@@ -136,6 +136,9 @@ public struct PersistedApplicationState: Codable, Hashable, Sendable {
     public var widgetDisplayConfigurations: [WidgetDisplayConfiguration]?
     public var widgetPerDisplayInitialized: Bool?
     public var defaultWidgetStyle: WidgetVisualStyle?
+    public var scenes: [DesktopScene]?
+    public var activeSceneID: UUID?
+    public var defaultSceneID: UUID?
 
     public init(
         schemaVersion: Int = 1,
@@ -150,7 +153,10 @@ public struct PersistedApplicationState: Codable, Hashable, Sendable {
         widgetDisplayMode: WidgetDisplayMode? = nil,
         widgetDisplayConfigurations: [WidgetDisplayConfiguration]? = nil,
         widgetPerDisplayInitialized: Bool? = nil,
-        defaultWidgetStyle: WidgetVisualStyle? = nil
+        defaultWidgetStyle: WidgetVisualStyle? = nil,
+        scenes: [DesktopScene]? = nil,
+        activeSceneID: UUID? = nil,
+        defaultSceneID: UUID? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.wallpapers = wallpapers
@@ -165,5 +171,8 @@ public struct PersistedApplicationState: Codable, Hashable, Sendable {
         self.widgetDisplayConfigurations = widgetDisplayConfigurations
         self.widgetPerDisplayInitialized = widgetPerDisplayInitialized
         self.defaultWidgetStyle = defaultWidgetStyle
+        self.scenes = scenes
+        self.activeSceneID = activeSceneID
+        self.defaultSceneID = defaultSceneID
     }
 }

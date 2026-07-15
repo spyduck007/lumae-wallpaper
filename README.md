@@ -13,6 +13,7 @@
 - Interactive Display Layout control center with stable display fingerprints, independent wallpaper/scaling/enabled state per monitor, synchronized duplicate mode, and seamless span mode.
 - Named playlists with drag ordering, shuffle, previous/next controls, automatic rotation, custom intervals, relaunch persistence, missing-file skipping, and current-presentation or per-display targets.
 - Extensible desktop widget canvas with Clock, Now Playing, Date/Calendar, and Battery widgets; native backdrop glass, distinct Clear/Contrast/None styles, artwork tint, global style defaults, in-place widget refreshes, isolated widget layers, shared masked blur, pooled multi-display video decoding, snapping, custom sizing, layering, undo/redo, and mirrored or per-display layouts.
+- Scenes save and instantly restore complete desktop environments—including display assignments, presentation mode, playlists, rotation behavior, widgets, styles, and monitor-specific layouts—without duplicating wallpaper files.
 - Independent playback sessions for different per-display videos, plus a shared `AVQueuePlayer` + `AVPlayerLooper` timeline for synchronized duplicate/span playback and one `AVPlayerLayer` per display crop.
 - Fill, Fit, Stretch and Center geometry; negative desktop coordinates, vertical offsets, rotated-size topology and mixed backing scales are represented in the portable core.
 - Non-focusable AppKit wallpaper windows, a crisp custom menu-bar control, close-to-menu-bar lifecycle, settings window, keyboard shortcuts, light/dark appearance and VoiceOver labels.

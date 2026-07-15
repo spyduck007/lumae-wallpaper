@@ -11,6 +11,25 @@ struct MenuBarView: View {
             model.togglePause()
         }
 
+        if !model.scenes.isEmpty {
+            Menu("Scenes") {
+                ForEach(model.scenes) { scene in
+                    Button {
+                        Task { await model.activateScene(id: scene.id) }
+                    } label: {
+                        if model.state.activeSceneID == scene.id
+                            && !model.activeSceneHasChanges {
+                            Label(scene.name, systemImage: "checkmark")
+                        } else {
+                            Text(scene.name)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+        }
+
         if let playlist = model.activePlaylist {
             Divider()
 
