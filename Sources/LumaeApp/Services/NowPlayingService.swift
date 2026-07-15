@@ -29,7 +29,9 @@ struct NowPlayingSnapshot {
     }
 
     func elapsed(at date: Date) -> TimeInterval {
-        guard isPlaying else { return min(max(elapsedTime, 0), max(duration, 0)) }
+        guard isPlaying else {
+            return min(max(elapsedTime, 0), max(duration, 0))
+        }
         let advanced = elapsedTime + date.timeIntervalSince(updatedAt)
         guard duration > 0 else { return max(advanced, 0) }
         return min(max(advanced, 0), duration)
@@ -47,9 +49,22 @@ final class NowPlayingService: ObservableObject {
         InfoCallback
     ) -> Void
 
+    private enum Key {
+        case title
+        case artist
+        case album
+        case duration
+        case elapsedTime
+        case playbackRate
+        case artworkData
+    }
+
     private var timer: Timer?
     private var mediaRemoteHandle: UnsafeMutableRawPointer?
     private var getNowPlayingInfo: GetInfoFunction?
+    private var mediaRemoteKeys: [Key: String] = [:]
+    private var artworkURL: URL?
+    private var artworkDownloadTask: URLSessionDataTask?
 
     private init() {
         loadMediaRemote()
@@ -64,6 +79,7 @@ final class NowPlayingService: ObservableObject {
 
     deinit {
         timer?.invalidate()
+        artworkDownloadTask?.cancel()
         if let mediaRemoteHandle {
             dlclose(mediaRemoteHandle)
         }
@@ -71,14 +87,16 @@ final class NowPlayingService: ObservableObject {
 
     func refresh() {
         guard let getNowPlayingInfo else {
-            snapshot = .empty
+            refreshFromSpotify()
             return
         }
 
         let callback: InfoCallback = { [weak self] dictionary in
             guard let self else { return }
             DispatchQueue.main.async {
-                self.consume(dictionary)
+                if !self.consumeMediaRemote(dictionary) {
+                    self.refreshFromSpotify()
+                }
             }
         }
         getNowPlayingInfo(.main, callback)
@@ -94,89 +112,128 @@ final class NowPlayingService: ObservableObject {
 
         mediaRemoteHandle = handle
         getNowPlayingInfo = unsafeBitCast(symbol, to: GetInfoFunction.self)
+        mediaRemoteKeys = [
+            .title: exportedString("kMRMediaRemoteNowPlayingInfoTitle", handle: handle),
+            .artist: exportedString("kMRMediaRemoteNowPlayingInfoArtist", handle: handle),
+            .album: exportedString("kMRMediaRemoteNowPlayingInfoAlbum", handle: handle),
+            .duration: exportedString("kMRMediaRemoteNowPlayingInfoDuration", handle: handle),
+            .elapsedTime: exportedString("kMRMediaRemoteNowPlayingInfoElapsedTime", handle: handle),
+            .playbackRate: exportedString("kMRMediaRemoteNowPlayingInfoPlaybackRate", handle: handle),
+            .artworkData: exportedString("kMRMediaRemoteNowPlayingInfoArtworkData", handle: handle)
+        ].compactMapValues { $0 }
     }
 
-    private func consume(_ dictionary: CFDictionary?) {
-        guard let dictionary else {
-            snapshot = .empty
-            return
-        }
+    private func exportedString(
+        _ symbolName: String,
+        handle: UnsafeMutableRawPointer
+    ) -> String? {
+        guard let symbol = dlsym(handle, symbolName) else { return nil }
+        let pointer = symbol.assumingMemoryBound(to: Optional<CFString>.self)
+        guard let value = pointer.pointee else { return nil }
+        return value as String
+    }
 
+    @discardableResult
+    private func consumeMediaRemote(_ dictionary: CFDictionary?) -> Bool {
+        guard let dictionary else { return false }
         let info = dictionary as NSDictionary
-        let title = stringValue(
-            info,
-            keys: [
-                "kMRMediaRemoteNowPlayingInfoTitle",
-                "title"
-            ]
-        )
+        let title = stringValue(info, key: .title, aliases: ["title"])
+        guard !title.isEmpty else { return false }
 
-        guard !title.isEmpty else {
-            snapshot = .empty
-            return
-        }
-
-        let artist = stringValue(
-            info,
-            keys: [
-                "kMRMediaRemoteNowPlayingInfoArtist",
-                "artist"
-            ]
-        )
-        let album = stringValue(
-            info,
-            keys: [
-                "kMRMediaRemoteNowPlayingInfoAlbum",
-                "album"
-            ]
-        )
-        let duration = numberValue(
-            info,
-            keys: [
-                "kMRMediaRemoteNowPlayingInfoDuration",
-                "duration"
-            ]
-        )
-        let elapsed = numberValue(
-            info,
-            keys: [
-                "kMRMediaRemoteNowPlayingInfoElapsedTime",
-                "elapsedTime"
-            ]
-        )
-        let playbackRate = numberValue(
-            info,
-            keys: [
-                "kMRMediaRemoteNowPlayingInfoPlaybackRate",
-                "playbackRate"
-            ]
-        )
-        let artwork = imageValue(
-            info,
-            keys: [
-                "kMRMediaRemoteNowPlayingInfoArtworkData",
-                "artworkData"
-            ]
-        )
-
+        artworkDownloadTask?.cancel()
+        artworkURL = nil
         snapshot = NowPlayingSnapshot(
             title: title,
-            artist: artist,
-            album: album,
-            artwork: artwork,
-            elapsedTime: elapsed,
-            duration: duration,
-            isPlaying: playbackRate > 0,
+            artist: stringValue(info, key: .artist, aliases: ["artist"]),
+            album: stringValue(info, key: .album, aliases: ["album"]),
+            artwork: imageValue(info, key: .artworkData, aliases: ["artworkData"]),
+            elapsedTime: numberValue(
+                info,
+                key: .elapsedTime,
+                aliases: ["elapsedTime"]
+            ),
+            duration: numberValue(info, key: .duration, aliases: ["duration"]),
+            isPlaying: numberValue(
+                info,
+                key: .playbackRate,
+                aliases: ["playbackRate"]
+            ) > 0,
             updatedAt: Date()
         )
+        return true
+    }
+
+    private func refreshFromSpotify() {
+        guard NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.spotify.client"
+        ).isEmpty == false else {
+            snapshot = .empty
+            return
+        }
+
+        let source = #"""
+        tell application "Spotify"
+            if player state is stopped then return ""
+            set t to current track
+            return (name of t) & linefeed & (artist of t) & linefeed & (album of t) & linefeed & ((duration of t) as string) & linefeed & ((player position) as string) & linefeed & ((player state) as string) & linefeed & (artwork url of t)
+        end tell
+        """#
+
+        var error: NSDictionary?
+        guard let result = NSAppleScript(source: source)?.executeAndReturnError(&error),
+              error == nil else {
+            snapshot = .empty
+            return
+        }
+
+        let lines = result.stringValue?.components(separatedBy: .newlines) ?? []
+        guard lines.count >= 6, !lines[0].isEmpty else {
+            snapshot = .empty
+            return
+        }
+
+        let durationMilliseconds = Double(lines[safe: 3] ?? "") ?? 0
+        let positionSeconds = Double(lines[safe: 4] ?? "") ?? 0
+        let state = lines[safe: 5] ?? ""
+        let artworkString = lines[safe: 6] ?? ""
+        let newArtworkURL = URL(string: artworkString)
+
+        snapshot = NowPlayingSnapshot(
+            title: lines[0],
+            artist: lines[safe: 1] ?? "",
+            album: lines[safe: 2] ?? "",
+            artwork: newArtworkURL == artworkURL ? snapshot.artwork : nil,
+            elapsedTime: positionSeconds,
+            duration: durationMilliseconds / 1_000,
+            isPlaying: state.caseInsensitiveCompare("playing") == .orderedSame,
+            updatedAt: Date()
+        )
+
+        if let newArtworkURL, newArtworkURL != artworkURL {
+            artworkURL = newArtworkURL
+            loadArtwork(from: newArtworkURL)
+        }
+    }
+
+    private func loadArtwork(from url: URL) {
+        artworkDownloadTask?.cancel()
+        artworkDownloadTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let data, let image = NSImage(data: data) else { return }
+            DispatchQueue.main.async {
+                guard self?.artworkURL == url else { return }
+                self?.snapshot.artwork = image
+            }
+        }
+        artworkDownloadTask?.resume()
     }
 
     private func stringValue(
         _ dictionary: NSDictionary,
-        keys: [String]
+        key: Key,
+        aliases: [String]
     ) -> String {
-        for key in keys {
-            if let value = dictionary[key] as? String {
+        for candidate in keyCandidates(key, aliases: aliases) {
+            if let value = dictionary[candidate] as? String {
                 return value
             }
         }
@@ -185,13 +242,14 @@ final class NowPlayingService: ObservableObject {
 
     private func numberValue(
         _ dictionary: NSDictionary,
-        keys: [String]
+        key: Key,
+        aliases: [String]
     ) -> Double {
-        for key in keys {
-            if let value = dictionary[key] as? NSNumber {
+        for candidate in keyCandidates(key, aliases: aliases) {
+            if let value = dictionary[candidate] as? NSNumber {
                 return value.doubleValue
             }
-            if let value = dictionary[key] as? Double {
+            if let value = dictionary[candidate] as? Double {
                 return value
             }
         }
@@ -200,14 +258,29 @@ final class NowPlayingService: ObservableObject {
 
     private func imageValue(
         _ dictionary: NSDictionary,
-        keys: [String]
+        key: Key,
+        aliases: [String]
     ) -> NSImage? {
-        for key in keys {
-            if let data = dictionary[key] as? Data,
+        for candidate in keyCandidates(key, aliases: aliases) {
+            if let data = dictionary[candidate] as? Data,
                let image = NSImage(data: data) {
                 return image
             }
         }
         return nil
+    }
+
+    private func keyCandidates(_ key: Key, aliases: [String]) -> [String] {
+        var values = aliases
+        if let exported = mediaRemoteKeys[key] {
+            values.insert(exported, at: 0)
+        }
+        return values
+    }
+}
+
+private extension Array {
+    subscript(safe index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }

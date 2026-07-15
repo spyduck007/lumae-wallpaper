@@ -226,34 +226,39 @@ struct NowPlayingWidgetView: View {
             .padding(padding)
             .background {
                 if widget.nowPlaying.showsBackground {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .environment(\.colorScheme, .dark)
-                        .overlay {
-                            LinearGradient(
-                                colors: [
-                                    .white.opacity(0.09),
-                                    .black.opacity(0.06)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                    ZStack {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .environment(\.colorScheme, .dark)
+
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(.black.opacity(0.10))
+
+                        LinearGradient(
+                            colors: [
+                                .white.opacity(0.13),
+                                .white.opacity(0.025),
+                                .clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: cornerRadius,
+                                style: .continuous
                             )
-                            .clipShape(
-                                RoundedRectangle(
-                                    cornerRadius: cornerRadius,
-                                    style: .continuous
-                                )
-                            )
-                        }
+                        )
+                    }
                 }
             }
             .overlay {
                 if widget.nowPlaying.showsBackground {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(.white.opacity(0.15), lineWidth: 1)
+                        .stroke(.white.opacity(0.20), lineWidth: 1)
                 }
             }
-            .shadow(color: .black.opacity(0.30), radius: 14, y: 5)
+            .shadow(color: .black.opacity(0.22), radius: 16, y: 6)
         }
     }
 
@@ -267,7 +272,7 @@ struct NowPlayingWidgetView: View {
                 .clipShape(RoundedRectangle(cornerRadius: artworkRadius, style: .continuous))
         } else {
             RoundedRectangle(cornerRadius: artworkRadius, style: .continuous)
-                .fill(.white.opacity(0.08))
+                .fill(.white.opacity(0.055))
                 .frame(width: artworkSize, height: artworkSize)
                 .overlay {
                     Image(systemName: snapshot.hasTrack ? "music.note" : "music.note.list")

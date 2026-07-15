@@ -281,11 +281,8 @@ struct WidgetsView: View {
                     .foregroundStyle(.secondary)
                 Text("No Widgets Yet")
                     .font(.title3.bold())
-                Text("Add a clock or Now Playing card.")
+                Text("Use Add Widget above to place your first widget.")
                     .foregroundStyle(.secondary)
-                addWidgetMenu
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
             }
             .padding(28)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
@@ -344,7 +341,7 @@ struct WidgetsView: View {
                         placementCard(selectedWidget)
                         removalCard(selectedWidget)
                     } else {
-                        addWidgetCard
+                        selectionHintCard
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
@@ -427,8 +424,6 @@ struct WidgetsView: View {
                 }
             }
 
-            Divider()
-            addWidgetMenu
         }
     }
 
@@ -524,13 +519,12 @@ struct WidgetsView: View {
         }
     }
 
-    private var addWidgetCard: some View {
+    private var selectionHintCard: some View {
         WidgetInspectorCard(title: "Widget") {
-            Text("Add a widget to the selected display layout.")
+            Text("Use Add Widget above, then select a widget in the preview or list to edit it.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            addWidgetMenu
-                .buttonStyle(.borderedProminent)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
