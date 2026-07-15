@@ -82,21 +82,25 @@ struct WidgetsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Picker(
-                "Display Behavior",
-                selection: Binding(
-                    get: { model.widgetDisplayMode },
-                    set: { model.setWidgetDisplayMode($0) }
-                )
-            ) {
-                Label("Mirror", systemImage: "rectangle.on.rectangle")
-                    .tag(WidgetDisplayMode.mirrored)
-                Label("Per Display", systemImage: "rectangle.split.2x1")
-                    .tag(WidgetDisplayMode.perDisplay)
+            HStack(spacing: 0) {
+                Picker(
+                    "Display Behavior",
+                    selection: Binding(
+                        get: { model.widgetDisplayMode },
+                        set: { model.setWidgetDisplayMode($0) }
+                    )
+                ) {
+                    Label("Mirror", systemImage: "rectangle.on.rectangle")
+                        .tag(WidgetDisplayMode.mirrored)
+                    Label("Per Display", systemImage: "rectangle.split.2x1")
+                        .tag(WidgetDisplayMode.perDisplay)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+
+                Spacer(minLength: 0)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 420)
 
             Text(modeDescription)
                 .font(.caption)

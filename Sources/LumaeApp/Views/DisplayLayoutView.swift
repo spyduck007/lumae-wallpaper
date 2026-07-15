@@ -54,23 +54,27 @@ struct DisplayLayoutView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Picker(
-                "Presentation Mode",
-                selection: Binding(
-                    get: { model.state.settings.presentationMode },
-                    set: { model.setPresentationMode($0) }
-                )
-            ) {
-                Label("Per Display", systemImage: "rectangle.split.2x1")
-                    .tag(DisplayPresentationMode.perDisplay)
-                Label("Duplicate", systemImage: "rectangle.on.rectangle")
-                    .tag(DisplayPresentationMode.duplicate)
-                Label("Span", systemImage: "rectangle.inset.filled")
-                    .tag(DisplayPresentationMode.span)
+            HStack(spacing: 0) {
+                Picker(
+                    "Presentation Mode",
+                    selection: Binding(
+                        get: { model.state.settings.presentationMode },
+                        set: { model.setPresentationMode($0) }
+                    )
+                ) {
+                    Label("Per Display", systemImage: "rectangle.split.2x1")
+                        .tag(DisplayPresentationMode.perDisplay)
+                    Label("Duplicate", systemImage: "rectangle.on.rectangle")
+                        .tag(DisplayPresentationMode.duplicate)
+                    Label("Span", systemImage: "rectangle.inset.filled")
+                        .tag(DisplayPresentationMode.span)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+
+                Spacer(minLength: 0)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 460)
         }
     }
 
