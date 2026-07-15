@@ -14,6 +14,14 @@ public enum DesktopWidgetSize: String, Codable, CaseIterable, Sendable {
     case custom
 }
 
+
+public enum WidgetVisualStyle: String, Codable, CaseIterable, Hashable, Sendable {
+    case glass
+    case clear
+    case highContrast
+    case none
+}
+
 public enum WidgetDisplayMode: String, Codable, CaseIterable, Sendable {
     case mirrored
     case perDisplay
@@ -70,9 +78,31 @@ public struct DigitalClockWidgetSettings: Codable, Hashable, Sendable {
 
 public struct NowPlayingWidgetSettings: Codable, Hashable, Sendable {
     public var showsBackground: Bool
+    public var usesArtworkTint: Bool
 
-    public init(showsBackground: Bool = true) {
+    public init(
+        showsBackground: Bool = true,
+        usesArtworkTint: Bool = true
+    ) {
         self.showsBackground = showsBackground
+        self.usesArtworkTint = usesArtworkTint
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case showsBackground
+        case usesArtworkTint
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        showsBackground = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .showsBackground
+        ) ?? true
+        usesArtworkTint = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .usesArtworkTint
+        ) ?? true
     }
 }
 
@@ -140,6 +170,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
     public var position: NormalizedWidgetPosition
     public var size: DesktopWidgetSize
     public var customScale: Double?
+    public var style: WidgetVisualStyle
     public var digitalClock: DigitalClockWidgetSettings
     public var nowPlaying: NowPlayingWidgetSettings
     public var dateCalendar: DateCalendarWidgetSettings
@@ -152,6 +183,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         position: NormalizedWidgetPosition = NormalizedWidgetPosition(),
         size: DesktopWidgetSize = .medium,
         customScale: Double? = nil,
+        style: WidgetVisualStyle = .glass,
         digitalClock: DigitalClockWidgetSettings = DigitalClockWidgetSettings(),
         nowPlaying: NowPlayingWidgetSettings = NowPlayingWidgetSettings(),
         dateCalendar: DateCalendarWidgetSettings = DateCalendarWidgetSettings(),
@@ -163,6 +195,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         self.position = position
         self.size = size
         self.customScale = customScale.map(Self.clampedCustomScale)
+        self.style = style
         self.digitalClock = digitalClock
         self.nowPlaying = nowPlaying
         self.dateCalendar = dateCalendar
@@ -176,6 +209,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         case position
         case size
         case customScale
+        case style
         case digitalClock
         case nowPlaying
         case dateCalendar
@@ -215,6 +249,16 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
             BatteryWidgetSettings.self,
             forKey: .battery
         ) ?? BatteryWidgetSettings()
+        style = try container.decodeIfPresent(
+            WidgetVisualStyle.self,
+            forKey: .style
+        ) ?? Self.legacyStyle(
+            kind: kind,
+            digitalClock: digitalClock,
+            nowPlaying: nowPlaying,
+            dateCalendar: dateCalendar,
+            battery: battery
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -225,10 +269,32 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         try container.encode(position, forKey: .position)
         try container.encode(size, forKey: .size)
         try container.encodeIfPresent(customScale, forKey: .customScale)
+        try container.encode(style, forKey: .style)
         try container.encode(digitalClock, forKey: .digitalClock)
         try container.encode(nowPlaying, forKey: .nowPlaying)
         try container.encode(dateCalendar, forKey: .dateCalendar)
         try container.encode(battery, forKey: .battery)
+    }
+
+    private static func legacyStyle(
+        kind: DesktopWidgetKind,
+        digitalClock: DigitalClockWidgetSettings,
+        nowPlaying: NowPlayingWidgetSettings,
+        dateCalendar: DateCalendarWidgetSettings,
+        battery: BatteryWidgetSettings
+    ) -> WidgetVisualStyle {
+        let showedBackground: Bool
+        switch kind {
+        case .digitalClock:
+            showedBackground = digitalClock.showsBackground
+        case .nowPlaying:
+            showedBackground = nowPlaying.showsBackground
+        case .dateCalendar:
+            showedBackground = dateCalendar.showsBackground
+        case .battery:
+            showedBackground = battery.showsBackground
+        }
+        return showedBackground ? .glass : .none
     }
 
     public var renderingScale: Double {

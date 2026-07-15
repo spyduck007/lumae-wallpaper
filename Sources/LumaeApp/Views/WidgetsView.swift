@@ -49,6 +49,7 @@ struct WidgetsView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     header
                     modeControl
+                    defaultAppearanceControl
                     previewCard
                     footerNote
                 }
@@ -145,6 +146,44 @@ struct WidgetsView: View {
             Text(modeDescription)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var defaultAppearanceControl: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Default Widget Style")
+                        .font(.headline)
+                    Text("New widgets use this style unless you change them individually.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Apply to All Widgets") {
+                    model.applyDefaultStyleToAllWidgets()
+                }
+                .disabled(model.widgets.isEmpty && model.widgetDisplayConfigurations.allSatisfy { $0.widgets.isEmpty })
+            }
+
+            HStack(spacing: 0) {
+                Picker(
+                    "Default Widget Style",
+                    selection: Binding(
+                        get: { model.defaultWidgetStyle },
+                        set: { model.setDefaultWidgetStyle($0) }
+                    )
+                ) {
+                    Text("Glass").tag(WidgetVisualStyle.glass)
+                    Text("Clear").tag(WidgetVisualStyle.clear)
+                    Text("Contrast").tag(WidgetVisualStyle.highContrast)
+                    Text("None").tag(WidgetVisualStyle.none)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                Spacer(minLength: 0)
+            }
         }
     }
 
@@ -640,13 +679,39 @@ struct WidgetsView: View {
                 )
             )
             Divider()
-            Toggle(
-                "Show background",
-                isOn: Binding(
-                    get: { showsBackground(widget) },
-                    set: { setShowsBackground($0, widget: widget) }
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Style")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker(
+                    "Style",
+                    selection: Binding(
+                        get: { widget.style },
+                        set: { model.setWidgetStyle($0, id: widget.id) }
+                    )
+                ) {
+                    Text("Glass").tag(WidgetVisualStyle.glass)
+                    Text("Clear").tag(WidgetVisualStyle.clear)
+                    Text("Contrast").tag(WidgetVisualStyle.highContrast)
+                    Text("None").tag(WidgetVisualStyle.none)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+            }
+
+            if widget.kind == .nowPlaying,
+               widget.style != .none {
+                Toggle(
+                    "Use artwork tint",
+                    isOn: Binding(
+                        get: { widget.nowPlaying.usesArtworkTint },
+                        set: { model.setNowPlayingUsesArtworkTint($0, id: widget.id) }
+                    )
                 )
-            )
+            }
+
             Divider()
             VStack(alignment: .leading, spacing: 7) {
                 Text("Size")
@@ -1193,28 +1258,6 @@ struct WidgetsView: View {
         }
     }
 
-    private func showsBackground(_ widget: DesktopWidget) -> Bool {
-        switch widget.kind {
-        case .digitalClock: return widget.digitalClock.showsBackground
-        case .nowPlaying: return widget.nowPlaying.showsBackground
-        case .dateCalendar: return widget.dateCalendar.showsBackground
-        case .battery: return widget.battery.showsBackground
-        }
-    }
-
-    private func setShowsBackground(_ enabled: Bool, widget: DesktopWidget) {
-        switch widget.kind {
-        case .digitalClock:
-            model.setClockShowsBackground(enabled, id: widget.id)
-        case .nowPlaying:
-            model.setNowPlayingShowsBackground(enabled, id: widget.id)
-        case .dateCalendar:
-            model.setDateCalendarShowsBackground(enabled, id: widget.id)
-        case .battery:
-            model.setBatteryShowsBackground(enabled, id: widget.id)
-        }
-    }
-
     private func defaultPosition(_ kind: DesktopWidgetKind) -> NormalizedWidgetPosition {
         switch kind {
         case .digitalClock: return NormalizedWidgetPosition(x: 0.5, y: 0.18)
@@ -1472,7 +1515,7 @@ private struct WidgetChooserView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 11)
             .padding(.vertical, 7)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .widgetSurface(style: .glass, cornerRadius: 10, scale: 0.5)
 
         case .nowPlaying:
             HStack(spacing: 7) {
@@ -1497,7 +1540,7 @@ private struct WidgetChooserView: View {
             }
             .foregroundStyle(.white)
             .padding(7)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .widgetSurface(style: .glass, cornerRadius: 10, scale: 0.5)
 
         case .dateCalendar:
             HStack(alignment: .center, spacing: 7) {
@@ -1516,7 +1559,7 @@ private struct WidgetChooserView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .widgetSurface(style: .glass, cornerRadius: 10, scale: 0.5)
 
         case .battery:
             HStack(spacing: 7) {
@@ -1536,7 +1579,7 @@ private struct WidgetChooserView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .widgetSurface(style: .glass, cornerRadius: 10, scale: 0.5)
         }
     }
 

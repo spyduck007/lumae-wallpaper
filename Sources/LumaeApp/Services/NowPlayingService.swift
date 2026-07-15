@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import CoreImage
+import CoreImage.CIFilterBuiltins
 import Darwin
 import Foundation
 
@@ -8,6 +10,7 @@ struct NowPlayingSnapshot {
     var artist: String
     var album: String
     var artwork: NSImage?
+    var artworkTint: NSColor?
     var elapsedTime: TimeInterval
     var duration: TimeInterval
     var isPlaying: Bool
@@ -18,6 +21,7 @@ struct NowPlayingSnapshot {
         artist: "",
         album: "",
         artwork: nil,
+        artworkTint: nil,
         elapsedTime: 0,
         duration: 0,
         isPlaying: false,
@@ -65,6 +69,7 @@ final class NowPlayingService: ObservableObject {
     private var mediaRemoteKeys: [Key: String] = [:]
     private var artworkURL: URL?
     private var artworkDownloadTask: URLSessionDataTask?
+    private var mediaRemoteArtworkSignature: Int?
 
     private init() {
         loadMediaRemote()
@@ -142,11 +147,30 @@ final class NowPlayingService: ObservableObject {
 
         artworkDownloadTask?.cancel()
         artworkURL = nil
+        let artworkData = dataValue(
+            info,
+            key: .artworkData,
+            aliases: ["artworkData"]
+        )
+        let artworkSignature = artworkData?.hashValue
+        let artwork: NSImage?
+        let artworkTint: NSColor?
+        if artworkSignature != nil,
+           artworkSignature == mediaRemoteArtworkSignature {
+            artwork = snapshot.artwork
+            artworkTint = snapshot.artworkTint
+        } else {
+            artwork = artworkData.flatMap(NSImage.init(data:))
+            artworkTint = artwork?.lumaeAverageColor
+            mediaRemoteArtworkSignature = artworkSignature
+        }
+
         snapshot = NowPlayingSnapshot(
             title: title,
             artist: stringValue(info, key: .artist, aliases: ["artist"]),
             album: stringValue(info, key: .album, aliases: ["album"]),
-            artwork: imageValue(info, key: .artworkData, aliases: ["artworkData"]),
+            artwork: artwork,
+            artworkTint: artworkTint,
             elapsedTime: numberValue(
                 info,
                 key: .elapsedTime,
@@ -203,6 +227,7 @@ final class NowPlayingService: ObservableObject {
             artist: lines[safe: 1] ?? "",
             album: lines[safe: 2] ?? "",
             artwork: newArtworkURL == artworkURL ? snapshot.artwork : nil,
+            artworkTint: newArtworkURL == artworkURL ? snapshot.artworkTint : nil,
             elapsedTime: positionSeconds,
             duration: durationMilliseconds / 1_000,
             isPlaying: state.caseInsensitiveCompare("playing") == .orderedSame,
@@ -222,6 +247,7 @@ final class NowPlayingService: ObservableObject {
             DispatchQueue.main.async {
                 guard self?.artworkURL == url else { return }
                 self?.snapshot.artwork = image
+                self?.snapshot.artworkTint = image.lumaeAverageColor
             }
         }
         artworkDownloadTask?.resume()
@@ -256,15 +282,14 @@ final class NowPlayingService: ObservableObject {
         return 0
     }
 
-    private func imageValue(
+    private func dataValue(
         _ dictionary: NSDictionary,
         key: Key,
         aliases: [String]
-    ) -> NSImage? {
+    ) -> Data? {
         for candidate in keyCandidates(key, aliases: aliases) {
-            if let data = dictionary[candidate] as? Data,
-               let image = NSImage(data: data) {
-                return image
+            if let data = dictionary[candidate] as? Data {
+                return data
             }
         }
         return nil
@@ -282,5 +307,41 @@ final class NowPlayingService: ObservableObject {
 private extension Array {
     subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+
+private extension NSImage {
+    var lumaeAverageColor: NSColor? {
+        guard let data = tiffRepresentation,
+              let input = CIImage(data: data) else {
+            return nil
+        }
+        let extent = input.extent
+        guard !extent.isEmpty else { return nil }
+        let filter = CIFilter.areaAverage()
+        filter.inputImage = input
+        filter.extent = extent
+        guard let output = filter.outputImage else { return nil }
+
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let context = CIContext(options: [
+            .workingColorSpace: NSNull(),
+            .outputColorSpace: NSNull()
+        ])
+        context.render(
+            output,
+            toBitmap: &pixel,
+            rowBytes: 4,
+            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            format: .RGBA8,
+            colorSpace: nil
+        )
+        return NSColor(
+            red: CGFloat(pixel[0]) / 255,
+            green: CGFloat(pixel[1]) / 255,
+            blue: CGFloat(pixel[2]) / 255,
+            alpha: 1
+        )
     }
 }

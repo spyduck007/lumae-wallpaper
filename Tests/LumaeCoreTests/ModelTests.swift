@@ -182,4 +182,34 @@ final class ModelTests:XCTestCase {
   XCTAssertTrue(DesktopWidgetKind.allCases.contains(.dateCalendar))
   XCTAssertTrue(DesktopWidgetKind.allCases.contains(.battery))
  }
+
+ func testLegacyBackgroundMigratesToWidgetStyle() throws {
+  let visible=DesktopWidget(kind:.digitalClock,digitalClock:DigitalClockWidgetSettings(showsBackground:true))
+  let hidden=DesktopWidget(kind:.dateCalendar,dateCalendar:DateCalendarWidgetSettings(showsBackground:false))
+  for (widget,expected) in [(visible,WidgetVisualStyle.glass),(hidden,WidgetVisualStyle.none)] {
+   let encoded=try JSONEncoder().encode(widget)
+   var object=try XCTUnwrap(JSONSerialization.jsonObject(with:encoded) as? [String:Any])
+   object.removeValue(forKey:"style")
+   let legacy=try JSONSerialization.data(withJSONObject:object)
+   XCTAssertEqual(try JSONDecoder().decode(DesktopWidget.self,from:legacy).style,expected)
+  }
+ }
+ func testWidgetStyleAndArtworkTintPersist() throws {
+  let widget=DesktopWidget(
+   kind:.nowPlaying,
+   style:.clear,
+   nowPlaying:NowPlayingWidgetSettings(showsBackground:true,usesArtworkTint:false)
+  )
+  let decoded=try JSONDecoder().decode(DesktopWidget.self,from:JSONEncoder().encode(widget))
+  XCTAssertEqual(decoded.style,.clear)
+  XCTAssertFalse(decoded.nowPlaying.usesArtworkTint)
+ }
+ func testDefaultWidgetStylePersists() throws {
+  let state=PersistedApplicationState(defaultWidgetStyle:.highContrast)
+  let decoded=try JSONDecoder().decode(PersistedApplicationState.self,from:JSONEncoder().encode(state))
+  XCTAssertEqual(decoded.defaultWidgetStyle,.highContrast)
+ }
+ func testWidgetVisualStylesComplete(){
+  XCTAssertEqual(Set(WidgetVisualStyle.allCases),Set([.glass,.clear,.highContrast,.none]))
+ }
 }

@@ -124,38 +124,11 @@ struct DigitalClockWidgetView: View {
             )
             .padding(.horizontal, horizontalPadding)
             .padding(.vertical, verticalPadding)
-            .background {
-                if widget.digitalClock.showsBackground {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .environment(\.colorScheme, .dark)
-                        .overlay {
-                            LinearGradient(
-                                colors: [
-                                    .white.opacity(0.10),
-                                    .clear
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .clipShape(
-                                RoundedRectangle(
-                                    cornerRadius: cornerRadius,
-                                    style: .continuous
-                                )
-                            )
-                        }
-                }
-            }
-            .overlay {
-                if widget.digitalClock.showsBackground {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(
-                            .white.opacity(0.16),
-                            lineWidth: max(0.75, layoutScale)
-                        )
-                }
-            }
+            .widgetSurface(
+                style: widget.style,
+                cornerRadius: cornerRadius,
+                scale: layoutScale
+            )
         }
     }
 
@@ -295,49 +268,21 @@ struct NowPlayingWidgetView: View {
                 .frame(width: contentWidth, alignment: .leading)
             }
             .padding(padding)
-            .background {
-                if widget.nowPlaying.showsBackground {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .environment(\.colorScheme, .dark)
-
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(.black.opacity(0.10))
-
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(0.13),
-                                .white.opacity(0.025),
-                                .clear
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        .clipShape(
-                            RoundedRectangle(
-                                cornerRadius: cornerRadius,
-                                style: .continuous
-                            )
-                        )
-                    }
-                }
-            }
-            .overlay {
-                if widget.nowPlaying.showsBackground {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(
-                            .white.opacity(0.20),
-                            lineWidth: max(0.75, layoutScale)
-                        )
-                }
-            }
-            .shadow(
-                color: .black.opacity(0.22),
-                radius: 16 * layoutScale,
-                y: 6 * layoutScale
+            .widgetSurface(
+                style: widget.style,
+                cornerRadius: cornerRadius,
+                scale: layoutScale,
+                tint: artworkTintColor
             )
         }
+    }
+
+    private var artworkTintColor: Color? {
+        guard widget.nowPlaying.usesArtworkTint,
+              let color = service.snapshot.artworkTint else {
+            return nil
+        }
+        return Color(nsColor: color)
     }
 
     @ViewBuilder
@@ -543,15 +488,10 @@ struct DateCalendarWidgetView: View {
             }
             .foregroundStyle(.white)
             .padding(containerPadding)
-            .background {
-                if widget.dateCalendar.showsBackground {
-                    widgetGlassBackground(cornerRadius: cornerRadius)
-                }
-            }
-            .shadow(
-                color: .black.opacity(0.28),
-                radius: 12 * layoutScale,
-                y: 4 * layoutScale
+            .widgetSurface(
+                style: widget.style,
+                cornerRadius: cornerRadius,
+                scale: layoutScale
             )
         }
     }
@@ -915,15 +855,10 @@ struct BatteryWidgetView: View {
         }
         .foregroundStyle(.white)
         .padding(14 * layoutScale)
-        .background {
-            if widget.battery.showsBackground {
-                widgetGlassBackground(cornerRadius: 19 * layoutScale)
-            }
-        }
-        .shadow(
-            color: .black.opacity(0.28),
-            radius: 12 * layoutScale,
-            y: 4 * layoutScale
+        .widgetSurface(
+            style: widget.style,
+            cornerRadius: 19 * layoutScale,
+            scale: layoutScale
         )
     }
 
@@ -962,24 +897,5 @@ struct BatteryWidgetView: View {
         case .large: return 1.30
         case .custom: return custom
         }
-    }
-}
-
-@ViewBuilder
-private func widgetGlassBackground(cornerRadius: CGFloat) -> some View {
-    ZStack {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .environment(\.colorScheme, .dark)
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(.black.opacity(0.08))
-        LinearGradient(
-            colors: [.white.opacity(0.11), .clear],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .stroke(.white.opacity(0.17), lineWidth: 1)
     }
 }

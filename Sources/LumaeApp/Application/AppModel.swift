@@ -764,6 +764,7 @@ private struct WidgetSubsystemSnapshot: Equatable {
     var mode: WidgetDisplayMode
     var configurations: [WidgetDisplayConfiguration]
     var perDisplayInitialized: Bool
+    var defaultStyle: WidgetVisualStyle
 }
 
 private struct WidgetHistoryEntry {
@@ -784,6 +785,10 @@ extension AppModel {
     var widgetDisplayConfigurations: [WidgetDisplayConfiguration] {
         get { state.widgetDisplayConfigurations ?? [] }
         set { state.widgetDisplayConfigurations = newValue }
+    }
+
+    var defaultWidgetStyle: WidgetVisualStyle {
+        state.defaultWidgetStyle ?? .glass
     }
 
     var canUndoWidgetEdit: Bool { !widgetUndoStack.isEmpty }
@@ -838,6 +843,32 @@ extension AppModel {
             var configurations = widgetDisplayConfigurations
             configurations[index].isEnabled = enabled
             widgetDisplayConfigurations = configurations
+        }
+    }
+
+    func setDefaultWidgetStyle(_ style: WidgetVisualStyle) {
+        performWidgetMutation(named: "Change Default Widget Style") {
+            state.defaultWidgetStyle = style
+        }
+    }
+
+    func applyDefaultStyleToAllWidgets() {
+        performWidgetMutation(named: "Apply Style to All Widgets") {
+            let style = defaultWidgetStyle
+            state.widgets = (state.widgets ?? []).map { widget in
+                var copy = widget
+                setStyleWithoutHistory(style, on: &copy)
+                return copy
+            }
+            state.widgetDisplayConfigurations = (state.widgetDisplayConfigurations ?? []).map { configuration in
+                var copy = configuration
+                copy.widgets = configuration.widgets.map { widget in
+                    var item = widget
+                    setStyleWithoutHistory(style, on: &item)
+                    return item
+                }
+                return copy
+            }
         }
     }
 
@@ -953,6 +984,20 @@ extension AppModel {
     func setNowPlayingShowsBackground(_ enabled: Bool, id: UUID) {
         performWidgetMutation(named: "Change Now Playing Background") {
             updateWidgetWithoutHistory(id: id) { $0.nowPlaying.showsBackground = enabled }
+        }
+    }
+
+    func setWidgetStyle(_ style: WidgetVisualStyle, id: UUID) {
+        performWidgetMutation(named: "Change Widget Style") {
+            updateWidgetWithoutHistory(id: id) { widget in
+                setStyleWithoutHistory(style, on: &widget)
+            }
+        }
+    }
+
+    func setNowPlayingUsesArtworkTint(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: "Change Artwork Tint") {
+            updateWidgetWithoutHistory(id: id) { $0.nowPlaying.usesArtworkTint = enabled }
         }
     }
 
@@ -1075,7 +1120,8 @@ extension AppModel {
             widgets: widgets,
             mode: widgetDisplayMode,
             configurations: widgetDisplayConfigurations,
-            perDisplayInitialized: state.widgetPerDisplayInitialized ?? false
+            perDisplayInitialized: state.widgetPerDisplayInitialized ?? false,
+            defaultStyle: defaultWidgetStyle
         )
     }
 
@@ -1084,6 +1130,7 @@ extension AppModel {
         state.widgetDisplayMode = snapshot.mode
         state.widgetDisplayConfigurations = snapshot.configurations
         state.widgetPerDisplayInitialized = snapshot.perDisplayInitialized
+        state.defaultWidgetStyle = snapshot.defaultStyle
     }
 
     private func widgetCollection(for displayID: String?) -> [DesktopWidget] {
@@ -1113,27 +1160,36 @@ extension AppModel {
     private func makeDefaultWidget(kind: DesktopWidgetKind, id: UUID) -> DesktopWidget {
         switch kind {
         case .digitalClock:
-            return DesktopWidget(id: id, kind: .digitalClock, position: NormalizedWidgetPosition(x: 0.5, y: 0.18), size: .medium)
+            return DesktopWidget(
+                id: id,
+                kind: .digitalClock,
+                position: NormalizedWidgetPosition(x: 0.5, y: 0.18),
+                size: .medium,
+                style: defaultWidgetStyle
+            )
         case .nowPlaying:
             return DesktopWidget(
                 id: id,
                 kind: .nowPlaying,
                 position: NormalizedWidgetPosition(x: 0.5, y: 0.78),
-                size: .medium
+                size: .medium,
+                style: defaultWidgetStyle
             )
         case .dateCalendar:
             return DesktopWidget(
                 id: id,
                 kind: .dateCalendar,
                 position: NormalizedWidgetPosition(x: 0.18, y: 0.20),
-                size: .medium
+                size: .medium,
+                style: defaultWidgetStyle
             )
         case .battery:
             return DesktopWidget(
                 id: id,
                 kind: .battery,
                 position: NormalizedWidgetPosition(x: 0.82, y: 0.20),
-                size: .medium
+                size: .medium,
+                style: defaultWidgetStyle
             )
         }
     }
@@ -1150,6 +1206,24 @@ extension AppModel {
         case (.dateCalendar, .medium), (.battery, .medium): return 1
         case (.dateCalendar, .large), (.battery, .large): return 1.30
         case (_, .custom): return widget.customScale ?? 1
+        }
+    }
+
+    private func setStyleWithoutHistory(
+        _ style: WidgetVisualStyle,
+        on widget: inout DesktopWidget
+    ) {
+        widget.style = style
+        let showsBackground = style != .none
+        switch widget.kind {
+        case .digitalClock:
+            widget.digitalClock.showsBackground = showsBackground
+        case .nowPlaying:
+            widget.nowPlaying.showsBackground = showsBackground
+        case .dateCalendar:
+            widget.dateCalendar.showsBackground = showsBackground
+        case .battery:
+            widget.battery.showsBackground = showsBackground
         }
     }
 
@@ -1189,6 +1263,7 @@ extension AppModel {
         if state.widgetDisplayMode == nil { state.widgetDisplayMode = .mirrored }
         if state.widgetDisplayConfigurations == nil { state.widgetDisplayConfigurations = [] }
         if state.widgetPerDisplayInitialized == nil { state.widgetPerDisplayInitialized = false }
+        if state.defaultWidgetStyle == nil { state.defaultWidgetStyle = .glass }
     }
 
     private func initializePerDisplayWidgetsIfNeeded() {
