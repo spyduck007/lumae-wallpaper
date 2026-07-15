@@ -404,7 +404,10 @@ final class SharedWidgetBackdropView: NSVisualEffectView {
         nil
     }
 
-    func update(regions: [WidgetBackdropRegion], canvasSize: CGSize) {
+    fileprivate func update(
+        regions: [WidgetBackdropRegion],
+        canvasSize: CGSize
+    ) {
         guard self.regions != regions || self.canvasSize != canvasSize else { return }
         self.regions = regions
         self.canvasSize = canvasSize
