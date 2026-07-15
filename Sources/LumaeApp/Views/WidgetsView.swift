@@ -892,7 +892,12 @@ struct WidgetsView: View {
     }
 
     private func normalizeWidgetBounds(in canvasSize: CGSize) {
-        guard canvasSize.width > 0, canvasSize.height > 0 else { return }
+        guard draggingWidgetID == nil,
+              resizingWidgetID == nil,
+              canvasSize.width > 0,
+              canvasSize.height > 0 else {
+            return
+        }
         for widget in editableWidgets where widget.isEnabled {
             let frame = previewFrame(for: widget, in: canvasSize)
             let bounded = WidgetCanvasEngine.clamp(
