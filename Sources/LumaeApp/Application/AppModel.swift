@@ -50,7 +50,10 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             await self.load()
             self.displayService.start()
-            self.reconcileAssignments(onto: self.displayService.currentTopology)
+            let topology = self.displayService.currentTopology
+            self.displayTopology = topology
+            self.reconcileAssignments(onto: topology)
+            self.reconcileWidgetDisplays(onto: topology)
             if self.state.settings.restoreLastConfiguration {
                 await self.engine.restore(
                     state: self.state,
@@ -777,7 +780,10 @@ extension AppModel {
         guard let display = displayTopology.display(id: displayID) else { return true }
         return WidgetDisplayResolver.bestConfiguration(
             for: display.fingerprint,
-            in: widgetDisplayConfigurations
+            in: widgetDisplayConfigurations,
+            excludingConfigurationIDs: reservedWidgetConfigurationIDs(
+                except: display.id
+            )
         )?.isEnabled ?? true
     }
 
@@ -787,7 +793,10 @@ extension AppModel {
             for: display,
             mode: widgetDisplayMode,
             mirroredWidgets: widgets,
-            configurations: widgetDisplayConfigurations
+            configurations: widgetDisplayConfigurations,
+            excludingConfigurationIDs: reservedWidgetConfigurationIDs(
+                except: display.id
+            )
         )
     }
 
@@ -948,11 +957,22 @@ extension AppModel {
         guard !topology.displays.isEmpty else { return }
 
         var configurations = widgetDisplayConfigurations
+        let activeIDs = topology.activeDisplayIDs
+
         for display in topology.displays {
-            if WidgetDisplayResolver.bestConfiguration(
+            if configurations.contains(where: {
+                $0.displayFingerprint.stableID == display.id
+            }) {
+                continue
+            }
+
+            let reservedIDs = activeIDs.subtracting([display.id])
+            if let matched = WidgetDisplayResolver.bestConfiguration(
                 for: display.fingerprint,
-                in: configurations
-            ) != nil {
+                in: configurations,
+                excludingConfigurationIDs: reservedIDs
+            ), let index = configurations.firstIndex(of: matched) {
+                configurations[index].displayFingerprint = display.fingerprint
                 continue
             }
 
@@ -967,6 +987,12 @@ extension AppModel {
             )
         }
         widgetDisplayConfigurations = configurations
+    }
+
+    private func reservedWidgetConfigurationIDs(
+        except displayID: String
+    ) -> Set<String> {
+        displayTopology.activeDisplayIDs.subtracting([displayID])
     }
 
     private func widgetConfigurationIndex(
@@ -984,7 +1010,10 @@ extension AppModel {
 
         if let matched = WidgetDisplayResolver.bestConfiguration(
             for: display.fingerprint,
-            in: configurations
+            in: configurations,
+            excludingConfigurationIDs: reservedWidgetConfigurationIDs(
+                except: display.id
+            )
         ), let index = configurations.firstIndex(of: matched) {
             configurations[index].displayFingerprint = display.fingerprint
             widgetDisplayConfigurations = configurations

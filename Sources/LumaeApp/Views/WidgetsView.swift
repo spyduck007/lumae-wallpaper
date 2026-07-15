@@ -8,6 +8,8 @@ struct WidgetsView: View {
     @State private var previewPosition = NormalizedWidgetPosition()
     @State private var confirmRemoval = false
     @State private var isDragging = false
+    @State private var verticalSnapGuide: Double?
+    @State private var horizontalSnapGuide: Double?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -138,6 +140,28 @@ struct WidgetsView: View {
                 ZStack {
                     previewWallpaper
 
+                    if let verticalSnapGuide {
+                        Rectangle()
+                            .fill(Color.accentColor.opacity(0.85))
+                            .frame(width: 1)
+                            .position(
+                                x: proxy.size.width * verticalSnapGuide,
+                                y: proxy.size.height / 2
+                            )
+                            .allowsHitTesting(false)
+                    }
+
+                    if let horizontalSnapGuide {
+                        Rectangle()
+                            .fill(Color.accentColor.opacity(0.85))
+                            .frame(height: 1)
+                            .position(
+                                x: proxy.size.width / 2,
+                                y: proxy.size.height * horizontalSnapGuide
+                            )
+                            .allowsHitTesting(false)
+                    }
+
                     if let clock = editableClock,
                        selectedDisplayWidgetsEnabled,
                        clock.isEnabled {
@@ -165,19 +189,27 @@ struct WidgetsView: View {
                                 )
                                 .onChanged { value in
                                     isDragging = true
-                                    previewPosition = normalizedPosition(
+                                    let result = snappedPosition(
                                         for: value.location,
                                         in: proxy.size
                                     )
+                                    previewPosition = result.position
+                                    verticalSnapGuide = result.verticalGuide
+                                    horizontalSnapGuide = result.horizontalGuide
                                 }
                                 .onEnded { value in
-                                    let position = normalizedPosition(
+                                    let result = snappedPosition(
                                         for: value.location,
                                         in: proxy.size
                                     )
-                                    previewPosition = position
+                                    previewPosition = result.position
                                     isDragging = false
-                                    model.setWidgetPosition(position, id: clock.id)
+                                    verticalSnapGuide = nil
+                                    horizontalSnapGuide = nil
+                                    model.setWidgetPosition(
+                                        result.position,
+                                        id: clock.id
+                                    )
                                 }
                             )
                             .help("Drag to reposition the clock")
@@ -533,13 +565,21 @@ struct WidgetsView: View {
         }
     }
 
-    private func normalizedPosition(
+    private func snappedPosition(
         for location: CGPoint,
         in size: CGSize
-    ) -> NormalizedWidgetPosition {
-        let x = min(max(location.x / max(size.width, 1), 0.10), 0.90)
-        let y = min(max(location.y / max(size.height, 1), 0.12), 0.88)
-        return NormalizedWidgetPosition(x: x, y: y)
+    ) -> WidgetSnapResult {
+        let raw = NormalizedWidgetPosition(
+            x: min(max(location.x / max(size.width, 1), 0.10), 0.90),
+            y: min(max(location.y / max(size.height, 1), 0.12), 0.88)
+        )
+        return WidgetSnapEngine.snap(
+            position: raw,
+            canvasSize: LSize(
+                width: Double(size.width),
+                height: Double(size.height)
+            )
+        )
     }
 
     private func selectionCornerRadius(_ size: DesktopWidgetSize) -> CGFloat {

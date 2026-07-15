@@ -116,11 +116,13 @@ public enum WidgetDisplayResolver {
         for display: DisplayDescriptor,
         mode: WidgetDisplayMode,
         mirroredWidgets: [DesktopWidget],
-        configurations: [WidgetDisplayConfiguration]
+        configurations: [WidgetDisplayConfiguration],
+        excludingConfigurationIDs: Set<String> = []
     ) -> [DesktopWidget] {
         let configuration = bestConfiguration(
             for: display.fingerprint,
-            in: configurations
+            in: configurations,
+            excludingConfigurationIDs: excludingConfigurationIDs
         )
 
         switch mode {
@@ -137,7 +139,8 @@ public enum WidgetDisplayResolver {
     public static func bestConfiguration(
         for fingerprint: DisplayFingerprint,
         in configurations: [WidgetDisplayConfiguration],
-        minimumFallbackScore: Int = 200
+        minimumFallbackScore: Int = 200,
+        excludingConfigurationIDs: Set<String> = []
     ) -> WidgetDisplayConfiguration? {
         if let exact = configurations.first(where: {
             $0.displayFingerprint.stableID == fingerprint.stableID
@@ -145,7 +148,9 @@ public enum WidgetDisplayResolver {
             return exact
         }
 
-        let candidates = configurations.map { configuration in
+        let candidates = configurations
+            .filter { !excludingConfigurationIDs.contains($0.id) }
+            .map { configuration in
             (
                 configuration,
                 configuration.displayFingerprint.matchScore(against: fingerprint)
@@ -155,5 +160,70 @@ public enum WidgetDisplayResolver {
         guard let best = candidates.max(by: { $0.1 < $1.1 }) else { return nil }
         guard candidates.filter({ $0.1 == best.1 }).count == 1 else { return nil }
         return best.0
+    }
+}
+
+
+public struct WidgetSnapResult: Hashable, Sendable {
+    public var position: NormalizedWidgetPosition
+    public var verticalGuide: Double?
+    public var horizontalGuide: Double?
+
+    public init(
+        position: NormalizedWidgetPosition,
+        verticalGuide: Double? = nil,
+        horizontalGuide: Double? = nil
+    ) {
+        self.position = position
+        self.verticalGuide = verticalGuide
+        self.horizontalGuide = horizontalGuide
+    }
+}
+
+public enum WidgetSnapEngine {
+    public static func snap(
+        position: NormalizedWidgetPosition,
+        canvasSize: LSize,
+        verticalTargets: [Double] = [0.10, 0.50, 0.90],
+        horizontalTargets: [Double] = [0.12, 0.50, 0.88],
+        thresholdPoints: Double = 10
+    ) -> WidgetSnapResult {
+        let verticalGuide = nearestTarget(
+            to: position.x,
+            targets: verticalTargets,
+            dimension: canvasSize.width,
+            thresholdPoints: thresholdPoints
+        )
+        let horizontalGuide = nearestTarget(
+            to: position.y,
+            targets: horizontalTargets,
+            dimension: canvasSize.height,
+            thresholdPoints: thresholdPoints
+        )
+
+        return WidgetSnapResult(
+            position: NormalizedWidgetPosition(
+                x: verticalGuide ?? position.x,
+                y: horizontalGuide ?? position.y
+            ),
+            verticalGuide: verticalGuide,
+            horizontalGuide: horizontalGuide
+        )
+    }
+
+    private static func nearestTarget(
+        to value: Double,
+        targets: [Double],
+        dimension: Double,
+        thresholdPoints: Double
+    ) -> Double? {
+        guard dimension > 0,
+              let nearest = targets.min(by: {
+                  abs($0 - value) < abs($1 - value)
+              }),
+              abs(nearest - value) * dimension <= thresholdPoints else {
+            return nil
+        }
+        return nearest
     }
 }

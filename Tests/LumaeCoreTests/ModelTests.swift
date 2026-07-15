@@ -49,4 +49,28 @@ final class ModelTests:XCTestCase {
   let config=WidgetDisplayConfiguration(displayFingerprint:saved,widgets:[clock])
   XCTAssertEqual(WidgetDisplayResolver.widgets(for:display,mode:.perDisplay,mirroredWidgets:[],configurations:[config]),[clock])
  }
+
+ func testActiveIdenticalDisplaysDoNotShareWidgetConfiguration(){
+  let firstFingerprint=DisplayFingerprint(stableID:"cg-1-v10-m20",vendorID:10,modelID:20,serialNumber:0,localizedName:"24G15N")
+  let secondFingerprint=DisplayFingerprint(stableID:"cg-2-v10-m20",vendorID:10,modelID:20,serialNumber:0,localizedName:"24G15N")
+  let first=DisplayDescriptor(fingerprint:firstFingerprint,framePoints:LRect(x:0,y:0,width:100,height:100),visibleFramePoints:LRect(x:0,y:0,width:100,height:100),pixelSize:LSize(width:100,height:100),backingScaleFactor:1)
+  let second=DisplayDescriptor(fingerprint:secondFingerprint,framePoints:LRect(x:100,y:0,width:100,height:100),visibleFramePoints:LRect(x:100,y:0,width:100,height:100),pixelSize:LSize(width:100,height:100),backingScaleFactor:1)
+  let firstConfig=WidgetDisplayConfiguration(displayFingerprint:firstFingerprint,isEnabled:false)
+  let secondConfig=WidgetDisplayConfiguration(displayFingerprint:secondFingerprint,isEnabled:true)
+  XCTAssertTrue(WidgetDisplayResolver.widgets(for:first,mode:.mirrored,mirroredWidgets:[DesktopWidget(kind:.digitalClock)],configurations:[firstConfig,secondConfig],excludingConfigurationIDs:[second.id]).isEmpty)
+  XCTAssertEqual(WidgetDisplayResolver.widgets(for:second,mode:.mirrored,mirroredWidgets:[DesktopWidget(kind:.digitalClock)],configurations:[firstConfig,secondConfig],excludingConfigurationIDs:[first.id]).count,1)
+ }
+ func testWidgetSnappingToCanvasGuides(){
+  let result=WidgetSnapEngine.snap(position:NormalizedWidgetPosition(x:0.492,y:0.126),canvasSize:LSize(width:1000,height:500))
+  XCTAssertEqual(result.position.x,0.5)
+  XCTAssertEqual(result.position.y,0.12)
+  XCTAssertEqual(result.verticalGuide,0.5)
+  XCTAssertEqual(result.horizontalGuide,0.12)
+ }
+ func testWidgetSnappingLeavesDistantPositionAlone(){
+  let result=WidgetSnapEngine.snap(position:NormalizedWidgetPosition(x:0.37,y:0.31),canvasSize:LSize(width:1000,height:500))
+  XCTAssertEqual(result.position,NormalizedWidgetPosition(x:0.37,y:0.31))
+  XCTAssertNil(result.verticalGuide)
+  XCTAssertNil(result.horizontalGuide)
+ }
 }

@@ -85,7 +85,11 @@ final class WallpaperEngine {
                 maxFrameRate: assignment.maxFrameRate
                     ?? state.settings.maximumFrameRate,
                 audioBehavior: state.settings.audioBehavior,
-                widgets: resolvedWidgets(for: display, state: state)
+                widgets: resolvedWidgets(
+                    for: display,
+                    state: state,
+                    topology: topology
+                )
             )
         }
     }
@@ -127,7 +131,11 @@ final class WallpaperEngine {
                     sourceSize: sourceSize,
                     mode: span ? .stretch : state.settings.defaultScalingMode,
                     spanSlice: slice,
-                    widgets: resolvedWidgets(for: display, state: state)
+                    widgets: resolvedWidgets(
+                    for: display,
+                    state: state,
+                    topology: topology
+                )
                 )
             }
 
@@ -146,7 +154,11 @@ final class WallpaperEngine {
                     sourceSize: sourceSize,
                     mode: span ? .stretch : state.settings.defaultScalingMode,
                     spanSlice: slice,
-                    widgets: resolvedWidgets(for: display, state: state)
+                    widgets: resolvedWidgets(
+                    for: display,
+                    state: state,
+                    topology: topology
+                )
                 )
             }
             sharedVideo.play()
@@ -206,13 +218,17 @@ final class WallpaperEngine {
 
     private func resolvedWidgets(
         for display: DisplayDescriptor,
-        state: PersistedApplicationState
+        state: PersistedApplicationState,
+        topology: DisplayTopology
     ) -> [DesktopWidget] {
         WidgetDisplayResolver.widgets(
             for: display,
             mode: state.widgetDisplayMode ?? .mirrored,
             mirroredWidgets: state.widgets ?? [],
-            configurations: state.widgetDisplayConfigurations ?? []
+            configurations: state.widgetDisplayConfigurations ?? [],
+            excludingConfigurationIDs: topology.activeDisplayIDs.subtracting([
+                display.id
+            ])
         )
     }
 
