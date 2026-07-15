@@ -934,7 +934,19 @@ extension AppModel {
     }
 
     func setWidgetSize(_ size: DesktopWidgetSize, id: UUID) {
-        updateWidget(id: id) { $0.size = size }
+        updateWidget(id: id) { widget in
+            if size == .custom, widget.customScale == nil {
+                widget.customScale = initialCustomScale(for: widget)
+            }
+            widget.size = size
+        }
+    }
+
+    func setWidgetCustomScale(_ scale: Double, id: UUID) {
+        updateWidget(id: id) { widget in
+            widget.size = .custom
+            widget.customScale = DesktopWidget.clampedCustomScale(scale)
+        }
     }
 
     func setClockUses24HourTime(_ enabled: Bool, id: UUID) {
@@ -951,6 +963,18 @@ extension AppModel {
 
     func setNowPlayingShowsBackground(_ enabled: Bool, id: UUID) {
         updateWidget(id: id) { $0.nowPlaying.showsBackground = enabled }
+    }
+
+    private func initialCustomScale(for widget: DesktopWidget) -> Double {
+        switch (widget.kind, widget.size) {
+        case (.digitalClock, .small): return 0.68
+        case (.digitalClock, .medium): return 1
+        case (.digitalClock, .large): return 1.44
+        case (.nowPlaying, .small): return 0.74
+        case (.nowPlaying, .medium): return 1
+        case (.nowPlaying, .large): return 1.33
+        case (_, .custom): return widget.customScale ?? 1
+        }
     }
 
     private func updateWidget(

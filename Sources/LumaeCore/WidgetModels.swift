@@ -9,6 +9,7 @@ public enum DesktopWidgetSize: String, Codable, CaseIterable, Sendable {
     case small
     case medium
     case large
+    case custom
 }
 
 public enum WidgetDisplayMode: String, Codable, CaseIterable, Sendable {
@@ -79,6 +80,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
     public var isEnabled: Bool
     public var position: NormalizedWidgetPosition
     public var size: DesktopWidgetSize
+    public var customScale: Double?
     public var digitalClock: DigitalClockWidgetSettings
     public var nowPlaying: NowPlayingWidgetSettings
 
@@ -88,6 +90,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         isEnabled: Bool = true,
         position: NormalizedWidgetPosition = NormalizedWidgetPosition(),
         size: DesktopWidgetSize = .medium,
+        customScale: Double? = nil,
         digitalClock: DigitalClockWidgetSettings = DigitalClockWidgetSettings(),
         nowPlaying: NowPlayingWidgetSettings = NowPlayingWidgetSettings()
     ) {
@@ -96,6 +99,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         self.isEnabled = isEnabled
         self.position = position
         self.size = size
+        self.customScale = customScale.map(Self.clampedCustomScale)
         self.digitalClock = digitalClock
         self.nowPlaying = nowPlaying
     }
@@ -106,6 +110,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         case isEnabled
         case position
         case size
+        case customScale
         case digitalClock
         case nowPlaying
     }
@@ -123,6 +128,10 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
             DesktopWidgetSize.self,
             forKey: .size
         ) ?? .medium
+        customScale = try container.decodeIfPresent(
+            Double.self,
+            forKey: .customScale
+        ).map(Self.clampedCustomScale)
         digitalClock = try container.decodeIfPresent(
             DigitalClockWidgetSettings.self,
             forKey: .digitalClock
@@ -140,8 +149,18 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         try container.encode(isEnabled, forKey: .isEnabled)
         try container.encode(position, forKey: .position)
         try container.encode(size, forKey: .size)
+        try container.encodeIfPresent(customScale, forKey: .customScale)
         try container.encode(digitalClock, forKey: .digitalClock)
         try container.encode(nowPlaying, forKey: .nowPlaying)
+    }
+
+    public var renderingScale: Double {
+        guard size == .custom else { return 1 }
+        return Self.clampedCustomScale(customScale ?? 1)
+    }
+
+    public static func clampedCustomScale(_ scale: Double) -> Double {
+        min(max(scale, 0.45), 2.5)
     }
 
     public func duplicated() -> DesktopWidget {

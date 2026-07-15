@@ -9,8 +9,42 @@ struct WidgetsView: View {
     @State private var previewPositions: [UUID: NormalizedWidgetPosition] = [:]
     @State private var confirmRemoval = false
     @State private var draggingWidgetID: UUID?
+    @State private var resizingWidgetID: UUID?
+    @State private var previewCustomScales: [UUID: Double] = [:]
+    @State private var resizeStartScale: Double?
+    @State private var resizeStartDistance: CGFloat?
     @State private var verticalSnapGuide: Double?
     @State private var horizontalSnapGuide: Double?
+
+    private enum ResizeCorner {
+        case topLeading
+        case topTrailing
+        case bottomLeading
+        case bottomTrailing
+
+        var alignment: Alignment {
+            switch self {
+            case .topLeading: return .topLeading
+            case .topTrailing: return .topTrailing
+            case .bottomLeading: return .bottomLeading
+            case .bottomTrailing: return .bottomTrailing
+            }
+        }
+
+        var xDirection: CGFloat {
+            switch self {
+            case .topLeading, .bottomLeading: return -1
+            case .topTrailing, .bottomTrailing: return 1
+            }
+        }
+
+        var yDirection: CGFloat {
+            switch self {
+            case .topLeading, .topTrailing: return -1
+            case .bottomLeading, .bottomTrailing: return 1
+            }
+        }
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -43,7 +77,7 @@ struct WidgetsView: View {
             syncEditorState()
         }
         .onChange(of: editableWidgets) { _, _ in
-            if draggingWidgetID == nil {
+            if draggingWidgetID == nil, resizingWidgetID == nil {
                 syncEditorState()
             }
         }
@@ -154,41 +188,7 @@ struct WidgetsView: View {
 
                     if selectedDisplayWidgetsEnabled {
                         ForEach(editableWidgets.filter(\.isEnabled)) { widget in
-                            DesktopWidgetContentView(widget: previewWidget(widget))
-                                .overlay {
-                                    if selectedWidgetID == widget.id {
-                                        RoundedRectangle(
-                                            cornerRadius: selectionCornerRadius(widget),
-                                            style: .continuous
-                                        )
-                                        .stroke(
-                                            Color.accentColor.opacity(
-                                                draggingWidgetID == widget.id ? 0.95 : 0.62
-                                            ),
-                                            style: StrokeStyle(
-                                                lineWidth: 2 / previewScale(in: proxy.size),
-                                                dash: [
-                                                    7 / previewScale(in: proxy.size),
-                                                    5 / previewScale(in: proxy.size)
-                                                ]
-                                            )
-                                        )
-                                        .padding(-7)
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                                .scaleEffect(
-                                    previewScale(in: proxy.size),
-                                    anchor: .center
-                                )
-                                .position(
-                                    x: proxy.size.width * previewPosition(for: widget).x,
-                                    y: proxy.size.height * previewPosition(for: widget).y
-                                )
-                                .onTapGesture {
-                                    selectedWidgetID = widget.id
-                                }
-                                .gesture(dragGesture(for: widget, in: proxy.size))
+                            editorWidget(widget, in: proxy.size)
                         }
                     }
 
@@ -210,6 +210,120 @@ struct WidgetsView: View {
             Color(nsColor: .controlBackgroundColor).opacity(0.72),
             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
         )
+    }
+
+    private func editorWidget(
+        _ widget: DesktopWidget,
+        in previewSize: CGSize
+    ) -> some View {
+        let scale = totalPreviewScale(for: widget, in: previewSize)
+
+        return DesktopWidgetContentView(widget: previewWidget(widget))
+            .overlay {
+                if selectedWidgetID == widget.id {
+                    selectionChrome(
+                        for: widget,
+                        totalScale: scale,
+                        previewSize: previewSize
+                    )
+                }
+            }
+            .contentShape(Rectangle())
+            .scaleEffect(scale, anchor: .center)
+            .position(
+                x: previewSize.width * previewPosition(for: widget).x,
+                y: previewSize.height * previewPosition(for: widget).y
+            )
+            .onTapGesture {
+                selectedWidgetID = widget.id
+            }
+            .gesture(dragGesture(for: widget, in: previewSize))
+    }
+
+    @ViewBuilder
+    private func selectionChrome(
+        for widget: DesktopWidget,
+        totalScale: CGFloat,
+        previewSize: CGSize
+    ) -> some View {
+        let safeScale = max(totalScale, 0.01)
+        let inset = 7 / safeScale
+
+        RoundedRectangle(
+            cornerRadius: selectionCornerRadius(widget),
+            style: .continuous
+        )
+        .stroke(
+            Color.accentColor.opacity(
+                draggingWidgetID == widget.id || resizingWidgetID == widget.id
+                    ? 0.95
+                    : 0.62
+            ),
+            style: StrokeStyle(
+                lineWidth: 2 / safeScale,
+                dash: [7 / safeScale, 5 / safeScale]
+            )
+        )
+        .padding(-inset)
+
+        if widget.size == .custom {
+            resizeHandle(
+                corner: .topLeading,
+                widget: widget,
+                totalScale: safeScale,
+                previewSize: previewSize
+            )
+            resizeHandle(
+                corner: .topTrailing,
+                widget: widget,
+                totalScale: safeScale,
+                previewSize: previewSize
+            )
+            resizeHandle(
+                corner: .bottomLeading,
+                widget: widget,
+                totalScale: safeScale,
+                previewSize: previewSize
+            )
+            resizeHandle(
+                corner: .bottomTrailing,
+                widget: widget,
+                totalScale: safeScale,
+                previewSize: previewSize
+            )
+        }
+    }
+
+    private func resizeHandle(
+        corner: ResizeCorner,
+        widget: DesktopWidget,
+        totalScale: CGFloat,
+        previewSize: CGSize
+    ) -> some View {
+        let diameter = 12 / totalScale
+        let offset = 6 / totalScale
+
+        return Circle()
+            .fill(Color(nsColor: .windowBackgroundColor))
+            .overlay {
+                Circle()
+                    .stroke(Color.accentColor, lineWidth: 2 / totalScale)
+            }
+            .frame(width: diameter, height: diameter)
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: corner.alignment
+            )
+            .offset(
+                x: corner.xDirection * offset,
+                y: corner.yDirection * offset
+            )
+            .contentShape(Circle())
+            .highPriorityGesture(
+                resizeGesture(for: widget, in: previewSize)
+            )
+            .help("Drag to resize proportionally")
     }
 
     @ViewBuilder
@@ -246,6 +360,7 @@ struct WidgetsView: View {
             coordinateSpace: .named("widgetPreview")
         )
         .onChanged { value in
+            guard resizingWidgetID == nil else { return }
             selectedWidgetID = widget.id
             draggingWidgetID = widget.id
             let result = snappedPosition(for: value.location, in: size)
@@ -254,12 +369,61 @@ struct WidgetsView: View {
             horizontalSnapGuide = result.horizontalGuide
         }
         .onEnded { value in
+            guard resizingWidgetID == nil else { return }
             let result = snappedPosition(for: value.location, in: size)
             previewPositions[widget.id] = result.position
             draggingWidgetID = nil
             verticalSnapGuide = nil
             horizontalSnapGuide = nil
             model.setWidgetPosition(result.position, id: widget.id)
+        }
+    }
+
+    private func resizeGesture(
+        for widget: DesktopWidget,
+        in previewSize: CGSize
+    ) -> some Gesture {
+        DragGesture(
+            minimumDistance: 0,
+            coordinateSpace: .named("widgetPreview")
+        )
+        .onChanged { value in
+            selectedWidgetID = widget.id
+            resizingWidgetID = widget.id
+
+            let center = CGPoint(
+                x: previewSize.width * previewPosition(for: widget).x,
+                y: previewSize.height * previewPosition(for: widget).y
+            )
+            let distance = max(
+                hypot(
+                    value.location.x - center.x,
+                    value.location.y - center.y
+                ),
+                1
+            )
+
+            if resizeStartDistance == nil {
+                resizeStartDistance = distance
+                resizeStartScale = previewCustomScale(for: widget)
+            }
+
+            guard let startDistance = resizeStartDistance,
+                  let startScale = resizeStartScale else {
+                return
+            }
+
+            let ratio = Double(distance / startDistance)
+            previewCustomScales[widget.id] = DesktopWidget.clampedCustomScale(
+                startScale * ratio
+            )
+        }
+        .onEnded { _ in
+            let finalScale = previewCustomScale(for: widget)
+            resizingWidgetID = nil
+            resizeStartDistance = nil
+            resizeStartScale = nil
+            model.setWidgetCustomScale(finalScale, id: widget.id)
         }
     }
 
@@ -483,8 +647,16 @@ struct WidgetsView: View {
                 Text("Small").tag(DesktopWidgetSize.small)
                 Text("Medium").tag(DesktopWidgetSize.medium)
                 Text("Large").tag(DesktopWidgetSize.large)
+                Text("Custom").tag(DesktopWidgetSize.custom)
             }
             .pickerStyle(.segmented)
+
+            if widget.size == .custom {
+                Text("Drag any corner handle in the preview to resize proportionally.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -664,7 +836,22 @@ struct WidgetsView: View {
     private func previewWidget(_ widget: DesktopWidget) -> DesktopWidget {
         var copy = widget
         copy.position = previewPosition(for: widget)
+        if copy.size == .custom {
+            copy.customScale = previewCustomScale(for: widget)
+        }
         return copy
+    }
+
+    private func previewCustomScale(for widget: DesktopWidget) -> Double {
+        previewCustomScales[widget.id] ?? widget.renderingScale
+    }
+
+    private func totalPreviewScale(
+        for widget: DesktopWidget,
+        in previewSize: CGSize
+    ) -> CGFloat {
+        previewScale(in: previewSize)
+            * CGFloat(widget.size == .custom ? previewCustomScale(for: widget) : 1)
     }
 
     private func previewPosition(for widget: DesktopWidget) -> NormalizedWidgetPosition {
@@ -693,13 +880,13 @@ struct WidgetsView: View {
         case .digitalClock:
             switch widget.size {
             case .small: return 16
-            case .medium: return 20
+            case .medium, .custom: return 20
             case .large: return 25
             }
         case .nowPlaying:
             switch widget.size {
             case .small: return 16
-            case .medium: return 21
+            case .medium, .custom: return 21
             case .large: return 27
             }
         }
@@ -708,6 +895,11 @@ struct WidgetsView: View {
     private func syncEditorState() {
         previewPositions = Dictionary(
             uniqueKeysWithValues: editableWidgets.map { ($0.id, $0.position) }
+        )
+        previewCustomScales = Dictionary(
+            uniqueKeysWithValues: editableWidgets.map {
+                ($0.id, $0.renderingScale)
+            }
         )
         if let selectedWidgetID,
            editableWidgets.contains(where: { $0.id == selectedWidgetID }) {

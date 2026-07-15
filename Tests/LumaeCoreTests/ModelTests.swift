@@ -90,4 +90,22 @@ final class ModelTests:XCTestCase {
   let decoded=try JSONDecoder().decode(DesktopWidget.self,from:legacy)
   XCTAssertTrue(decoded.nowPlaying.showsBackground)
  }
+
+ func testCustomWidgetScalePersistsAndClamps() throws {
+  let widget=DesktopWidget(kind:.nowPlaying,size:.custom,customScale:9)
+  XCTAssertEqual(widget.renderingScale,2.5)
+  let decoded=try JSONDecoder().decode(DesktopWidget.self,from:JSONEncoder().encode(widget))
+  XCTAssertEqual(decoded.size,.custom)
+  XCTAssertEqual(decoded.renderingScale,2.5)
+ }
+ func testOlderWidgetDefaultsCustomScaleSafely() throws {
+  let widget=DesktopWidget(kind:.digitalClock)
+  let encoded=try JSONEncoder().encode(widget)
+  var object=try XCTUnwrap(JSONSerialization.jsonObject(with:encoded) as? [String:Any])
+  object.removeValue(forKey:"customScale")
+  object["size"]="custom"
+  let legacy=try JSONSerialization.data(withJSONObject:object)
+  let decoded=try JSONDecoder().decode(DesktopWidget.self,from:legacy)
+  XCTAssertEqual(decoded.renderingScale,1)
+ }
 }
