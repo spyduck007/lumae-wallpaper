@@ -8,7 +8,7 @@ struct WidgetVisualSurface: View {
     var tint: Color? = nil
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.accessibilityIncreaseContrast) private var increaseContrast
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     var body: some View {
         let shape = RoundedRectangle(
@@ -74,6 +74,10 @@ struct WidgetVisualSurface: View {
         }
         .compositingGroup()
         .allowsHitTesting(false)
+    }
+
+    private var increaseContrast: Bool {
+        colorSchemeContrast == .increased
     }
 
     private var resolvedStyle: WidgetVisualStyle {
