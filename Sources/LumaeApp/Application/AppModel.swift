@@ -68,6 +68,7 @@ final class AppModel: ObservableObject {
         do {
             state = try await store.load()
             normalizePlaylistState()
+            normalizeWidgetState()
             state.wallpapers = state.wallpapers.map { item in
                 var copy = item
                 copy.isMissing = !FileManager.default.fileExists(
@@ -746,6 +747,71 @@ extension AppModel {
             } catch {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+}
+
+
+extension AppModel {
+    var widgets: [DesktopWidget] {
+        get { state.widgets ?? [] }
+        set { state.widgets = newValue }
+    }
+
+    var digitalClockWidget: DesktopWidget? {
+        widgets.first { $0.kind == .digitalClock }
+    }
+
+    @discardableResult
+    func addDigitalClockWidget() -> UUID {
+        if let existing = digitalClockWidget {
+            return existing.id
+        }
+
+        let widget = DesktopWidget(kind: .digitalClock)
+        widgets.append(widget)
+        scheduleConfigurationApply()
+        return widget.id
+    }
+
+    func removeWidget(id: UUID) {
+        widgets.removeAll { $0.id == id }
+        scheduleConfigurationApply()
+    }
+
+    func setWidgetEnabled(_ enabled: Bool, id: UUID) {
+        guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
+        widgets[index].isEnabled = enabled
+        scheduleConfigurationApply()
+    }
+
+    func setWidgetPosition(_ position: NormalizedWidgetPosition, id: UUID) {
+        guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
+        widgets[index].position = position
+        scheduleConfigurationApply()
+    }
+
+    func setWidgetSize(_ size: DesktopWidgetSize, id: UUID) {
+        guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
+        widgets[index].size = size
+        scheduleConfigurationApply()
+    }
+
+    func setClockUses24HourTime(_ enabled: Bool, id: UUID) {
+        guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
+        widgets[index].digitalClock.uses24HourTime = enabled
+        scheduleConfigurationApply()
+    }
+
+    func setClockShowsSeconds(_ enabled: Bool, id: UUID) {
+        guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
+        widgets[index].digitalClock.showsSeconds = enabled
+        scheduleConfigurationApply()
+    }
+
+    private func normalizeWidgetState() {
+        if state.widgets == nil {
+            state.widgets = []
         }
     }
 }

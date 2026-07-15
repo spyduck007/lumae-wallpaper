@@ -46,7 +46,9 @@ struct LibraryView: View {
                     .buttonStyle(.plain)
                 }
 
-                Section("Displays") {
+                Section("Desktop") {
+                    Label("Widgets", systemImage: "square.stack.3d.up")
+                        .tag(SidebarSection.widgets)
                     Label("Display Layout", systemImage: "display.2")
                         .tag(SidebarSection.displays)
                 }
@@ -55,6 +57,10 @@ struct LibraryView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
         } detail: {
             switch selectedSection {
+            case .widgets:
+                WidgetsView()
+                    .navigationTitle(title)
+
             case .displays:
                 DisplayLayoutView()
                     .navigationTitle(title)
@@ -267,6 +273,7 @@ enum SidebarSection: Hashable {
     case recent
     case missing
     case playlist(UUID)
+    case widgets
     case displays
 
     var title: String {
@@ -276,6 +283,7 @@ enum SidebarSection: Hashable {
         case .recent: return "Recently Used"
         case .missing: return "Missing Files"
         case .playlist: return "Playlist"
+        case .widgets: return "Widgets"
         case .displays: return "Display Layout"
         }
     }

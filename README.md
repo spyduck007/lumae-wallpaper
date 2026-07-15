@@ -12,6 +12,7 @@
 - Local metadata and JSON persistence, SHA-256 duplicate detection, thumbnails, cache cleanup, missing-file recovery through Locate File, and graceful media errors.
 - Interactive Display Layout control center with stable display fingerprints, independent wallpaper/scaling/enabled state per monitor, synchronized duplicate mode, and seamless span mode.
 - Named playlists with drag ordering, shuffle, previous/next controls, automatic rotation, custom intervals, relaunch persistence, missing-file skipping, and current-presentation or per-display targets.
+- Extensible desktop widget overlay system with a minimal digital clock, drag-to-position editing, size controls, 12/24-hour time, optional seconds, and synchronized placement across active displays.
 - Independent playback sessions for different per-display videos, plus a shared `AVQueuePlayer` + `AVPlayerLooper` timeline for synchronized duplicate/span playback and one `AVPlayerLayer` per display crop.
 - Fill, Fit, Stretch and Center geometry; negative desktop coordinates, vertical offsets, rotated-size topology and mixed backing scales are represented in the portable core.
 - Non-focusable AppKit wallpaper windows, a crisp custom menu-bar control, close-to-menu-bar lifecycle, settings window, keyboard shortcuts, light/dark appearance and VoiceOver labels.
@@ -108,7 +109,7 @@ Ubuntu-available validation:
 ./scripts/run-tests.sh
 ```
 
-On macOS this also runs `swift test` and `xcodebuild test`. The test layouts cover identical side-by-side displays, Retina/non-Retina mixes, above/below layouts, portrait beside landscape, three displays with negative coordinates, reconnection fingerprint matching, mixed-scale span and vertical offsets. Tests also cover duplicate detection, JSON round trips, cache eviction and playlist cycling.
+On macOS this also runs `swift test` and `xcodebuild test`. The test layouts cover identical side-by-side displays, Retina/non-Retina mixes, above/below layouts, portrait beside landscape, three displays with negative coordinates, reconnection fingerprint matching, mixed-scale span and vertical offsets. Tests also cover duplicate detection, JSON round trips, cache eviction, playlist cycling, and widget persistence.
 
 ## Release and DMG
 

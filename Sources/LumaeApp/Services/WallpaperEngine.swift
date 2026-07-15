@@ -125,7 +125,8 @@ final class WallpaperEngine {
                     display: display,
                     sourceSize: sourceSize,
                     mode: span ? .stretch : state.settings.defaultScalingMode,
-                    spanSlice: slice
+                    spanSlice: slice,
+                    widgets: state.widgets ?? []
                 )
             }
 
@@ -143,7 +144,8 @@ final class WallpaperEngine {
                     display: display,
                     sourceSize: sourceSize,
                     mode: span ? .stretch : state.settings.defaultScalingMode,
-                    spanSlice: slice
+                    spanSlice: slice,
+                    widgets: state.widgets ?? []
                 )
             }
             sharedVideo.play()
@@ -174,7 +176,8 @@ final class WallpaperEngine {
                 image: image,
                 display: display,
                 sourceSize: sourceSize,
-                mode: scalingMode
+                mode: scalingMode,
+                widgets: currentState?.widgets ?? []
             )
 
         case .video:
@@ -188,7 +191,8 @@ final class WallpaperEngine {
                 player: player,
                 display: display,
                 sourceSize: sourceSize,
-                mode: scalingMode
+                mode: scalingMode,
+                widgets: currentState?.widgets ?? []
             )
             displayVideos[display.id] = playback
             playback.play()

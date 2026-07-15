@@ -16,4 +16,16 @@ final class ModelTests:XCTestCase {
   let a=UUID(),b=UUID(); var p=WallpaperPlaylist(name:"Shuffle",wallpaperIDs:[a,b],shuffle:true,currentWallpaperID:a)
   XCTAssertEqual(WallpaperPlaylistEngine.advance(playlist:&p,direction:.next,availableIDs:[a,b],randomIndex:{_ in 0}),b)
  }
+
+ func testWidgetPositionClampsToCanvas(){
+  let position=NormalizedWidgetPosition(x:-2,y:3)
+  XCTAssertEqual(position.x,0)
+  XCTAssertEqual(position.y,1)
+ }
+ func testWidgetPersistence() throws {
+  let widget=DesktopWidget(kind:.digitalClock,position:NormalizedWidgetPosition(x:0.25,y:0.75),size:.large,digitalClock:DigitalClockWidgetSettings(uses24HourTime:true,showsSeconds:true))
+  let state=PersistedApplicationState(widgets:[widget])
+  let decoded=try JSONDecoder().decode(PersistedApplicationState.self,from:JSONEncoder().encode(state))
+  XCTAssertEqual(decoded.widgets,[widget])
+ }
 }
