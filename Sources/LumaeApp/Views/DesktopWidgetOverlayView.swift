@@ -2,68 +2,14 @@ import AppKit
 import SwiftUI
 import LumaeCore
 
-struct DesktopWidgetOverlayView: View {
-    @ObservedObject var state: WidgetOverlayState
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                ForEach(state.widgets) { widget in
-                    DesktopWidgetPositionedView(
-                        widget: widget,
-                        canvasSize: proxy.size
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
-
-private struct DesktopWidgetPositionedView: View {
+struct DesktopWidgetHostContent: View {
     let widget: DesktopWidget
-    let canvasSize: CGSize
-
-    @State private var measuredSize: CGSize = .zero
 
     var body: some View {
         DesktopWidgetContentView(widget: widget)
-            .background {
-                GeometryReader { geometry in
-                    Color.clear
-                        .onAppear { measuredSize = geometry.size }
-                        .onChange(of: geometry.size) { _, size in
-                            measuredSize = size
-                        }
-                }
-            }
-            .position(clampedPosition)
-    }
-
-    private var clampedPosition: CGPoint {
-        let desired = LPoint(
-            x: Double(canvasSize.width) * widget.position.x,
-            y: Double(canvasSize.height) * widget.position.y
-        )
-        guard measuredSize.width > 0, measuredSize.height > 0 else {
-            return CGPoint(x: desired.x, y: desired.y)
-        }
-        let clamped = WidgetCanvasEngine.clamp(
-            LRect(
-                x: desired.x - Double(measuredSize.width) / 2,
-                y: desired.y - Double(measuredSize.height) / 2,
-                width: Double(measuredSize.width),
-                height: Double(measuredSize.height)
-            ),
-            to: LSize(
-                width: Double(canvasSize.width),
-                height: Double(canvasSize.height)
-            )
-        )
-        return CGPoint(x: clamped.midX, y: clamped.midY)
+            .environment(\.widgetUsesSharedBackdrop, true)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

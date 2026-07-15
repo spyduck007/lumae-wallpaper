@@ -37,7 +37,7 @@ final class BatteryService: ObservableObject {
     private init() {
         refresh()
         timer = Timer.scheduledTimer(
-            withTimeInterval: 30,
+            withTimeInterval: 120,
             repeats: true
         ) { [weak self] _ in
             self?.refresh()

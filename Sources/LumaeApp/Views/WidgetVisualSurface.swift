@@ -4,6 +4,18 @@ import CoreImage.CIFilterBuiltins
 import SwiftUI
 import LumaeCore
 
+
+private struct WidgetUsesSharedBackdropKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var widgetUsesSharedBackdrop: Bool {
+        get { self[WidgetUsesSharedBackdropKey.self] }
+        set { self[WidgetUsesSharedBackdropKey.self] = newValue }
+    }
+}
+
 struct WidgetVisualSurface: View {
     let style: WidgetVisualStyle
     let cornerRadius: CGFloat
@@ -11,6 +23,7 @@ struct WidgetVisualSurface: View {
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.widgetUsesSharedBackdrop) private var usesSharedBackdrop
 
     var body: some View {
         let shape = RoundedRectangle(
@@ -22,7 +35,7 @@ struct WidgetVisualSurface: View {
             if resolvedStyle != .none {
                 if reduceTransparency {
                     shape.fill(solidFallbackColor)
-                } else if resolvedStyle != .clear {
+                } else if resolvedStyle != .clear && !usesSharedBackdrop {
                     WidgetBackdropBlur(
                         material: material,
                         blendingMode: .withinWindow,

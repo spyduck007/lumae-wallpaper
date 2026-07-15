@@ -5,9 +5,13 @@ import LumaeCore
 @MainActor
 final class WallpaperEngine {
     private let windows = WallpaperWindowManager()
-    private let sharedVideo = SharedVideoPlaybackService()
-    private var displayVideos: [String: SharedVideoPlaybackService] = [:]
+    private let imageCache = NSCache<NSString, NSImage>()
+    private var videoSessions: [VideoPlaybackKey: VideoPlaybackSession] = [:]
     private var currentState: PersistedApplicationState?
+
+    init() {
+        imageCache.countLimit = 8
+    }
 
     func apply(
         wallpaper: WallpaperMetadata,
@@ -68,13 +72,11 @@ final class WallpaperEngine {
     }
 
     func pause() {
-        sharedVideo.pause()
-        displayVideos.values.forEach { $0.pause() }
+        videoSessions.values.forEach { $0.service.pause() }
     }
 
     func resume() {
-        sharedVideo.resume()
-        displayVideos.values.forEach { $0.resume() }
+        videoSessions.values.forEach { $0.service.resume() }
     }
 
     private func applyPerDisplay(
@@ -135,9 +137,7 @@ final class WallpaperEngine {
 
         switch wallpaper.kind {
         case .image, .animatedImage:
-            guard let image = NSImage(contentsOfFile: wallpaper.effectiveFilePath) else {
-                throw EngineError.unreadable
-            }
+            let image = try cachedImage(at: wallpaper.effectiveFilePath)
 
             for display in topology.displays {
                 let slice = layout?.slices.first { $0.displayID == display.id }
@@ -156,8 +156,8 @@ final class WallpaperEngine {
             }
 
         case .video:
-            let player = try sharedVideo.prepare(
-                url: URL(fileURLWithPath: wallpaper.effectiveFilePath),
+            let session = try videoSession(
+                path: wallpaper.effectiveFilePath,
                 muted: state.settings.audioBehavior == .muted,
                 maxFrameRate: state.settings.maximumFrameRate
             )
@@ -165,7 +165,7 @@ final class WallpaperEngine {
             for display in topology.displays {
                 let slice = layout?.slices.first { $0.displayID == display.id }
                 windows.showVideo(
-                    player: player,
+                    player: session.player,
                     display: display,
                     sourceSize: sourceSize,
                     mode: span ? .stretch : state.settings.defaultScalingMode,
@@ -177,7 +177,7 @@ final class WallpaperEngine {
                     )
                 )
             }
-            sharedVideo.play()
+            session.service.play()
 
         case .unsupported:
             throw EngineError.unsupported
@@ -199,9 +199,7 @@ final class WallpaperEngine {
 
         switch wallpaper.kind {
         case .image, .animatedImage:
-            guard let image = NSImage(contentsOfFile: wallpaper.effectiveFilePath) else {
-                throw EngineError.unreadable
-            }
+            let image = try cachedImage(at: wallpaper.effectiveFilePath)
             windows.showStatic(
                 image: image,
                 display: display,
@@ -211,21 +209,19 @@ final class WallpaperEngine {
             )
 
         case .video:
-            let playback = SharedVideoPlaybackService()
-            let player = try playback.prepare(
-                url: URL(fileURLWithPath: wallpaper.effectiveFilePath),
+            let session = try videoSession(
+                path: wallpaper.effectiveFilePath,
                 muted: audioBehavior == .muted,
                 maxFrameRate: maxFrameRate
             )
             windows.showVideo(
-                player: player,
+                player: session.player,
                 display: display,
                 sourceSize: sourceSize,
                 mode: scalingMode,
                 widgets: widgets
             )
-            displayVideos[display.id] = playback
-            playback.play()
+            session.service.play()
 
         case .unsupported:
             throw EngineError.unsupported
@@ -248,10 +244,57 @@ final class WallpaperEngine {
         )
     }
 
+    private func cachedImage(at path: String) throws -> NSImage {
+        let key = path as NSString
+        if let cached = imageCache.object(forKey: key) {
+            return cached
+        }
+        guard let image = NSImage(contentsOfFile: path) else {
+            throw EngineError.unreadable
+        }
+        imageCache.setObject(image, forKey: key)
+        return image
+    }
+
+    private func videoSession(
+        path: String,
+        muted: Bool,
+        maxFrameRate: Int
+    ) throws -> VideoPlaybackSession {
+        let key = VideoPlaybackKey(path: path, muted: muted)
+        if let existing = videoSessions[key] {
+            return existing
+        }
+        let service = SharedVideoPlaybackService()
+        let player = try service.prepare(
+            url: URL(fileURLWithPath: path),
+            muted: muted,
+            maxFrameRate: maxFrameRate
+        )
+        let session = VideoPlaybackSession(service: service, player: player)
+        videoSessions[key] = session
+        return session
+    }
+
     private func stopAllPlayback() {
-        sharedVideo.stop()
-        displayVideos.values.forEach { $0.stop() }
-        displayVideos.removeAll()
+        videoSessions.values.forEach { $0.service.stop() }
+        videoSessions.removeAll()
+    }
+}
+
+private struct VideoPlaybackKey: Hashable {
+    var path: String
+    var muted: Bool
+}
+
+@MainActor
+private final class VideoPlaybackSession {
+    let service: SharedVideoPlaybackService
+    let player: AVQueuePlayer
+
+    init(service: SharedVideoPlaybackService, player: AVQueuePlayer) {
+        self.service = service
+        self.player = player
     }
 }
 
