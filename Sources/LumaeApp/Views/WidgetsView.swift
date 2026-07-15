@@ -11,12 +11,13 @@ struct WidgetsView: View {
     @State private var draggingWidgetID: UUID?
     @State private var resizingWidgetID: UUID?
     @State private var previewCustomScales: [UUID: Double] = [:]
+    @State private var measuredWidgetSizes: [UUID: CGSize] = [:]
     @State private var resizeStartScale: Double?
     @State private var resizeStartDistance: CGFloat?
     @State private var verticalSnapGuide: Double?
     @State private var horizontalSnapGuide: Double?
 
-    private enum ResizeCorner {
+    private enum ResizeCorner: CaseIterable, Hashable {
         case topLeading
         case topTrailing
         case bottomLeading
@@ -190,6 +191,17 @@ struct WidgetsView: View {
                         ForEach(editableWidgets.filter(\.isEnabled)) { widget in
                             editorWidget(widget, in: proxy.size)
                         }
+
+                        if let selectedWidget,
+                           selectedWidget.size == .custom,
+                           selectedWidget.isEnabled,
+                           let measuredSize = measuredWidgetSizes[selectedWidget.id] {
+                            resizeControls(
+                                for: selectedWidget,
+                                measuredSize: measuredSize,
+                                previewSize: proxy.size
+                            )
+                        }
                     }
 
                     if editableWidgets.isEmpty || !selectedDisplayWidgetsEnabled {
@@ -197,6 +209,9 @@ struct WidgetsView: View {
                     }
                 }
                 .coordinateSpace(name: "widgetPreview")
+                .onPreferenceChange(WidgetMeasuredSizePreferenceKey.self) { sizes in
+                    measuredWidgetSizes.merge(sizes) { _, new in new }
+                }
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -216,58 +231,25 @@ struct WidgetsView: View {
         _ widget: DesktopWidget,
         in previewSize: CGSize
     ) -> some View {
-        let scale = totalPreviewScale(for: widget, in: previewSize)
+        let scale = previewScale(in: previewSize)
         let isSelected = selectedWidgetID == widget.id
-        let showsResizeHandles = isSelected && widget.size == .custom
 
         return DesktopWidgetContentView(widget: previewWidget(widget))
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: WidgetMeasuredSizePreferenceKey.self,
+                        value: [widget.id: geometry.size]
+                    )
+                }
+            }
             .overlay {
                 if isSelected {
                     selectionBorder(
                         for: widget,
-                        totalScale: scale
+                        previewScale: scale
                     )
                     .allowsHitTesting(false)
-                }
-            }
-            .overlay(alignment: .topLeading) {
-                if showsResizeHandles {
-                    resizeHandle(
-                        corner: .topLeading,
-                        widget: widget,
-                        totalScale: scale,
-                        previewSize: previewSize
-                    )
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if showsResizeHandles {
-                    resizeHandle(
-                        corner: .topTrailing,
-                        widget: widget,
-                        totalScale: scale,
-                        previewSize: previewSize
-                    )
-                }
-            }
-            .overlay(alignment: .bottomLeading) {
-                if showsResizeHandles {
-                    resizeHandle(
-                        corner: .bottomLeading,
-                        widget: widget,
-                        totalScale: scale,
-                        previewSize: previewSize
-                    )
-                }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if showsResizeHandles {
-                    resizeHandle(
-                        corner: .bottomTrailing,
-                        widget: widget,
-                        totalScale: scale,
-                        previewSize: previewSize
-                    )
                 }
             }
             .contentShape(Rectangle())
@@ -284,9 +266,9 @@ struct WidgetsView: View {
 
     private func selectionBorder(
         for widget: DesktopWidget,
-        totalScale: CGFloat
+        previewScale: CGFloat
     ) -> some View {
-        let safeScale = max(totalScale, 0.01)
+        let safeScale = max(previewScale, 0.01)
         return RoundedRectangle(
             cornerRadius: selectionCornerRadius(widget),
             style: .continuous
@@ -305,35 +287,51 @@ struct WidgetsView: View {
         .padding(-7 / safeScale)
     }
 
-    private func resizeHandle(
-        corner: ResizeCorner,
-        widget: DesktopWidget,
-        totalScale: CGFloat,
+    @ViewBuilder
+    private func resizeControls(
+        for widget: DesktopWidget,
+        measuredSize: CGSize,
         previewSize: CGSize
     ) -> some View {
-        let safeScale = max(totalScale, 0.01)
-        let visibleDiameter = 12 / safeScale
-        let hitTarget = 28 / safeScale
-        let outwardOffset = hitTarget / 2
+        let scale = previewScale(in: previewSize)
+        let renderedSize = CGSize(
+            width: measuredSize.width * scale,
+            height: measuredSize.height * scale
+        )
+        let center = CGPoint(
+            x: previewSize.width * previewPosition(for: widget).x,
+            y: previewSize.height * previewPosition(for: widget).y
+        )
 
-        return ZStack {
+        ForEach(Array(ResizeCorner.allCases), id: \.self) { corner in
+            canvasResizeHandle(
+                corner: corner,
+                widget: widget,
+                previewSize: previewSize
+            )
+            .position(
+                x: center.x + corner.xDirection * renderedSize.width / 2,
+                y: center.y + corner.yDirection * renderedSize.height / 2
+            )
+        }
+    }
+
+    private func canvasResizeHandle(
+        corner: ResizeCorner,
+        widget: DesktopWidget,
+        previewSize: CGSize
+    ) -> some View {
+        ZStack {
             Circle()
                 .fill(Color(nsColor: .windowBackgroundColor))
-                .frame(width: visibleDiameter, height: visibleDiameter)
+                .frame(width: 12, height: 12)
                 .overlay {
                     Circle()
-                        .stroke(
-                            Color.accentColor,
-                            lineWidth: 2 / safeScale
-                        )
+                        .stroke(Color.accentColor, lineWidth: 2)
                 }
         }
-        .frame(width: hitTarget, height: hitTarget)
+        .frame(width: 30, height: 30)
         .contentShape(Rectangle())
-        .offset(
-            x: corner.xDirection * outwardOffset,
-            y: corner.yDirection * outwardOffset
-        )
         .highPriorityGesture(
             resizeGesture(for: widget, in: previewSize)
         )
@@ -860,13 +858,6 @@ struct WidgetsView: View {
         previewCustomScales[widget.id] ?? widget.renderingScale
     }
 
-    private func totalPreviewScale(
-        for widget: DesktopWidget,
-        in previewSize: CGSize
-    ) -> CGFloat {
-        previewScale(in: previewSize)
-            * CGFloat(widget.size == .custom ? previewCustomScale(for: widget) : 1)
-    }
 
     private func previewPosition(for widget: DesktopWidget) -> NormalizedWidgetPosition {
         previewPositions[widget.id] ?? widget.position
@@ -1001,5 +992,17 @@ private struct WidgetInspectorCard<Content: View>: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.primary.opacity(0.06), lineWidth: 1)
         }
+    }
+}
+
+
+private struct WidgetMeasuredSizePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGSize] = [:]
+
+    static func reduce(
+        value: inout [UUID: CGSize],
+        nextValue: () -> [UUID: CGSize]
+    ) {
+        value.merge(nextValue()) { _, new in new }
     }
 }

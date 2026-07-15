@@ -10,7 +10,6 @@ struct DesktopWidgetOverlayView: View {
             ZStack {
                 ForEach(widgets.filter(\.isEnabled)) { widget in
                     DesktopWidgetContentView(widget: widget)
-                        .scaleEffect(CGFloat(widget.renderingScale))
                         .position(
                             x: proxy.size.width * widget.position.x,
                             y: proxy.size.height * widget.position.y
@@ -47,10 +46,13 @@ struct DigitalClockWidgetView: View {
                 by: widget.digitalClock.showsSeconds ? 1 : 30
             )
         ) { context in
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
+            HStack(
+                alignment: .firstTextBaseline,
+                spacing: 7 * layoutScale
+            ) {
                 Text(mainTime(for: context.date))
                     .font(.system(size: fontSize, weight: .medium, design: .rounded))
-                    .tracking(-1.2)
+                    .tracking(-1.2 * layoutScale)
 
                 if widget.digitalClock.showsSeconds {
                     Text(seconds(for: context.date))
@@ -67,7 +69,11 @@ struct DigitalClockWidgetView: View {
             }
             .monospacedDigit()
             .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.45), radius: 10, y: 3)
+            .shadow(
+                color: .black.opacity(0.45),
+                radius: 10 * layoutScale,
+                y: 3 * layoutScale
+            )
             .padding(.horizontal, horizontalPadding)
             .padding(.vertical, verticalPadding)
             .background {
@@ -96,49 +102,61 @@ struct DigitalClockWidgetView: View {
             .overlay {
                 if widget.digitalClock.showsBackground {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(.white.opacity(0.16), lineWidth: 1)
+                        .stroke(
+                            .white.opacity(0.16),
+                            lineWidth: max(0.75, layoutScale)
+                        )
                 }
             }
         }
     }
 
+    private var layoutScale: CGFloat {
+        CGFloat(widget.renderingScale)
+    }
+
     private var fontSize: CGFloat {
         switch widget.size {
         case .small: return 34
-        case .medium, .custom: return 50
+        case .medium: return 50
         case .large: return 72
+        case .custom: return 50 * layoutScale
         }
     }
 
     private var secondaryFontSize: CGFloat {
         switch widget.size {
         case .small: return 16
-        case .medium, .custom: return 21
+        case .medium: return 21
         case .large: return 29
+        case .custom: return 21 * layoutScale
         }
     }
 
     private var horizontalPadding: CGFloat {
         switch widget.size {
         case .small: return 17
-        case .medium, .custom: return 22
+        case .medium: return 22
         case .large: return 28
+        case .custom: return 22 * layoutScale
         }
     }
 
     private var verticalPadding: CGFloat {
         switch widget.size {
         case .small: return 10
-        case .medium, .custom: return 13
+        case .medium: return 13
         case .large: return 17
+        case .custom: return 13 * layoutScale
         }
     }
 
     private var cornerRadius: CGFloat {
         switch widget.size {
         case .small: return 16
-        case .medium, .custom: return 20
+        case .medium: return 20
         case .large: return 25
+        case .custom: return 20 * layoutScale
         }
     }
 
@@ -176,7 +194,10 @@ struct NowPlayingWidgetView: View {
                 artwork(snapshot)
 
                 VStack(alignment: .leading, spacing: contentSpacing) {
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(
+                        alignment: .leading,
+                        spacing: 3 * layoutScale
+                    ) {
                         Text(snapshot.hasTrack ? snapshot.title : "Nothing Playing")
                             .font(.system(size: titleSize, weight: .semibold, design: .rounded))
                             .foregroundStyle(.white)
@@ -191,11 +212,12 @@ struct NowPlayingWidgetView: View {
                     EqualizerView(
                         isActive: snapshot.hasTrack && snapshot.isPlaying,
                         date: context.date,
-                        barCount: barCount
+                        barCount: barCount,
+                        barSpacing: 2 * layoutScale
                     )
                     .frame(height: visualizerHeight)
 
-                    VStack(spacing: 5) {
+                    VStack(spacing: 5 * layoutScale) {
                         GeometryReader { proxy in
                             ZStack(alignment: .leading) {
                                 Capsule()
@@ -210,7 +232,7 @@ struct NowPlayingWidgetView: View {
                                     )
                             }
                         }
-                        .frame(height: 3)
+                        .frame(height: 3 * layoutScale)
 
                         HStack {
                             Text(timeString(snapshot.hasTrack ? elapsed : 0))
@@ -256,10 +278,17 @@ struct NowPlayingWidgetView: View {
             .overlay {
                 if widget.nowPlaying.showsBackground {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(.white.opacity(0.20), lineWidth: 1)
+                        .stroke(
+                            .white.opacity(0.20),
+                            lineWidth: max(0.75, layoutScale)
+                        )
                 }
             }
-            .shadow(color: .black.opacity(0.22), radius: 16, y: 6)
+            .shadow(
+                color: .black.opacity(0.22),
+                radius: 16 * layoutScale,
+                y: 6 * layoutScale
+            )
         }
     }
 
@@ -301,11 +330,16 @@ struct NowPlayingWidgetView: View {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
+    private var layoutScale: CGFloat {
+        CGFloat(widget.renderingScale)
+    }
+
     private var artworkSize: CGFloat {
         switch widget.size {
         case .small: return 68
-        case .medium, .custom: return 92
+        case .medium: return 92
         case .large: return 122
+        case .custom: return 92 * layoutScale
         }
     }
 
@@ -315,72 +349,81 @@ struct NowPlayingWidgetView: View {
     private var titleSize: CGFloat {
         switch widget.size {
         case .small: return 13
-        case .medium, .custom: return 16
+        case .medium: return 16
         case .large: return 20
+        case .custom: return 16 * layoutScale
         }
     }
 
     private var subtitleSize: CGFloat {
         switch widget.size {
         case .small: return 10
-        case .medium, .custom: return 12
+        case .medium: return 12
         case .large: return 14
+        case .custom: return 12 * layoutScale
         }
     }
 
     private var timeSize: CGFloat {
         switch widget.size {
         case .small: return 8
-        case .medium, .custom: return 10
+        case .medium: return 10
         case .large: return 12
+        case .custom: return 10 * layoutScale
         }
     }
 
     private var contentWidth: CGFloat {
         switch widget.size {
         case .small: return 115
-        case .medium, .custom: return 165
+        case .medium: return 165
         case .large: return 225
+        case .custom: return 165 * layoutScale
         }
     }
 
     private var visualizerHeight: CGFloat {
         switch widget.size {
         case .small: return 18
-        case .medium, .custom: return 27
+        case .medium: return 27
         case .large: return 36
+        case .custom: return 27 * layoutScale
         }
     }
 
     private var contentSpacing: CGFloat {
         switch widget.size {
         case .small: return 7
-        case .medium, .custom: return 10
+        case .medium: return 10
         case .large: return 13
+        case .custom: return 10 * layoutScale
         }
     }
 
     private var artworkGap: CGFloat {
         switch widget.size {
         case .small: return 11
-        case .medium, .custom: return 14
+        case .medium: return 14
         case .large: return 18
+        case .custom: return 14 * layoutScale
         }
     }
 
     private var padding: CGFloat {
         switch widget.size {
         case .small: return 10
-        case .medium, .custom: return 13
+        case .medium: return 13
         case .large: return 17
+        case .custom: return 13 * layoutScale
         }
     }
 
     private var cornerRadius: CGFloat {
         switch widget.size {
         case .small: return 16
-        case .medium, .custom: return 21
+        case .medium: return 21
         case .large: return 27
+        case .custom: return 21 * layoutScale
         }
     }
 
@@ -397,10 +440,11 @@ private struct EqualizerView: View {
     let isActive: Bool
     let date: Date
     let barCount: Int
+    let barSpacing: CGFloat
 
     var body: some View {
         GeometryReader { proxy in
-            HStack(alignment: .center, spacing: 2) {
+            HStack(alignment: .center, spacing: barSpacing) {
                 ForEach(0..<barCount, id: \.self) { index in
                     Capsule()
                         .fill(.white.opacity(isActive ? 0.72 : 0.22))
