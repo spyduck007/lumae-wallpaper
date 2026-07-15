@@ -869,8 +869,12 @@ struct WidgetsView: View {
     }
 
     private func applyGuides(_ result: WidgetCanvasSnapResult) {
-        verticalSnapGuides = result.verticalGuides.map(CGFloat.init)
-        horizontalSnapGuides = result.horizontalGuides.map(CGFloat.init)
+        verticalSnapGuides = result.verticalGuides.map { value in
+            CGFloat(value)
+        }
+        horizontalSnapGuides = result.horizontalGuides.map { value in
+            CGFloat(value)
+        }
         equalHorizontalSpacing = result.hasEqualHorizontalSpacing
         equalVerticalSpacing = result.hasEqualVerticalSpacing
     }
