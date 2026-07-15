@@ -108,4 +108,37 @@ final class ModelTests:XCTestCase {
   let decoded=try JSONDecoder().decode(DesktopWidget.self,from:legacy)
   XCTAssertEqual(decoded.renderingScale,1)
  }
+
+ func testWidgetCanvasClampsAndSnapsToOtherWidget(){
+  let other=WidgetCanvasItem(id:UUID(),frame:LRect(x:100,y:100,width:120,height:60))
+  let moving=WidgetCanvasItem(id:UUID(),frame:LRect(x:124,y:190,width:80,height:40))
+  let result=WidgetCanvasEngine.snap(moving:moving,canvasSize:LSize(width:500,height:300),others:[other])
+  XCTAssertEqual(result.frame.midX,160,accuracy:0.001)
+  XCTAssertEqual(result.verticalGuides.first ?? -1,160,accuracy:0.001)
+  let clamped=WidgetCanvasEngine.clamp(LRect(x:-20,y:500,width:80,height:40),to:LSize(width:500,height:300))
+  XCTAssertEqual(clamped,LRect(x:0,y:260,width:80,height:40))
+ }
+ func testWidgetCanvasMaximumScaleRespectsBounds(){
+  let scale=WidgetCanvasEngine.maximumScale(currentFrame:LRect(x:200,y:125,width:100,height:50),currentScale:1,center:LPoint(x:250,y:150),canvasSize:LSize(width:500,height:300))
+  XCTAssertEqual(scale,5,accuracy:0.001)
+  let edgeScale=WidgetCanvasEngine.maximumScale(currentFrame:LRect(x:25,y:25,width:100,height:50),currentScale:1,center:LPoint(x:75,y:50),canvasSize:LSize(width:500,height:300))
+  XCTAssertEqual(edgeScale,1.5,accuracy:0.001)
+ }
+
+ func testWidgetCanvasEqualSpacing(){
+  let left=WidgetCanvasItem(id:UUID(),frame:LRect(x:20,y:50,width:50,height:40))
+  let right=WidgetCanvasItem(id:UUID(),frame:LRect(x:230,y:50,width:50,height:40))
+  let moving=WidgetCanvasItem(id:UUID(),frame:LRect(x:140,y:50,width:40,height:40))
+  let result=WidgetCanvasEngine.snap(moving:moving,canvasSize:LSize(width:300,height:180),others:[left,right],thresholdPoints:12)
+  XCTAssertTrue(result.hasEqualHorizontalSpacing)
+  XCTAssertEqual(result.frame.minX,130,accuracy:0.001)
+ }
+ func testWidgetCanvasDetectsEqualSpacing(){
+  let left=WidgetCanvasItem(id:UUID(),frame:LRect(x:20,y:100,width:60,height:40))
+  let right=WidgetCanvasItem(id:UUID(),frame:LRect(x:220,y:100,width:60,height:40))
+  let moving=WidgetCanvasItem(id:UUID(),frame:LRect(x:111,y:100,width:80,height:40))
+  let result=WidgetCanvasEngine.snap(moving:moving,canvasSize:LSize(width:400,height:300),others:[left,right],thresholdPoints:12)
+  XCTAssertTrue(result.hasEqualHorizontalSpacing)
+  XCTAssertEqual(result.frame.minX,110,accuracy:0.001)
+ }
 }

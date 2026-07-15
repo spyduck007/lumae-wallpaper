@@ -303,3 +303,129 @@ public enum WidgetSnapEngine {
         return nearest
     }
 }
+
+public struct WidgetCanvasItem: Identifiable, Hashable, Sendable {
+    public var id: UUID
+    public var frame: LRect
+
+    public init(id: UUID, frame: LRect) {
+        self.id = id
+        self.frame = frame
+    }
+}
+
+public struct WidgetCanvasSnapResult: Hashable, Sendable {
+    public var frame: LRect
+    public var verticalGuides: [Double]
+    public var horizontalGuides: [Double]
+    public var hasEqualHorizontalSpacing: Bool
+    public var hasEqualVerticalSpacing: Bool
+
+    public init(
+        frame: LRect,
+        verticalGuides: [Double] = [],
+        horizontalGuides: [Double] = [],
+        hasEqualHorizontalSpacing: Bool = false,
+        hasEqualVerticalSpacing: Bool = false
+    ) {
+        self.frame = frame
+        self.verticalGuides = verticalGuides
+        self.horizontalGuides = horizontalGuides
+        self.hasEqualHorizontalSpacing = hasEqualHorizontalSpacing
+        self.hasEqualVerticalSpacing = hasEqualVerticalSpacing
+    }
+}
+
+public enum WidgetCanvasEngine {
+    public static func snap(
+        moving: WidgetCanvasItem,
+        canvasSize: LSize,
+        others: [WidgetCanvasItem],
+        thresholdPoints: Double = 8
+    ) -> WidgetCanvasSnapResult {
+        guard canvasSize.isValid, moving.frame.isValid else {
+            return WidgetCanvasSnapResult(frame: moving.frame)
+        }
+        var xCandidates: [(Double, Double, Bool)] = []
+        var yCandidates: [(Double, Double, Bool)] = []
+        xCandidates.append((0 - moving.frame.minX, 0, false))
+        xCandidates.append((canvasSize.width / 2 - moving.frame.midX, canvasSize.width / 2, false))
+        xCandidates.append((canvasSize.width - moving.frame.maxX, canvasSize.width, false))
+        yCandidates.append((0 - moving.frame.minY, 0, false))
+        yCandidates.append((canvasSize.height / 2 - moving.frame.midY, canvasSize.height / 2, false))
+        yCandidates.append((canvasSize.height - moving.frame.maxY, canvasSize.height, false))
+        for other in others {
+            xCandidates.append((other.frame.minX - moving.frame.minX, other.frame.minX, false))
+            xCandidates.append((other.frame.midX - moving.frame.midX, other.frame.midX, false))
+            xCandidates.append((other.frame.maxX - moving.frame.maxX, other.frame.maxX, false))
+            xCandidates.append((other.frame.maxX - moving.frame.minX, other.frame.maxX, false))
+            xCandidates.append((other.frame.minX - moving.frame.maxX, other.frame.minX, false))
+
+            yCandidates.append((other.frame.minY - moving.frame.minY, other.frame.minY, false))
+            yCandidates.append((other.frame.midY - moving.frame.midY, other.frame.midY, false))
+            yCandidates.append((other.frame.maxY - moving.frame.maxY, other.frame.maxY, false))
+            yCandidates.append((other.frame.maxY - moving.frame.minY, other.frame.maxY, false))
+            yCandidates.append((other.frame.minY - moving.frame.maxY, other.frame.minY, false))
+        }
+        if others.count >= 2 {
+            for left in others {
+                for right in others where left.id != right.id && left.frame.maxX <= right.frame.minX {
+                    let available = right.frame.minX - left.frame.maxX - moving.frame.size.width
+                    if available >= 0 {
+                        let desired = left.frame.maxX + available / 2
+                        xCandidates.append((desired - moving.frame.minX, desired + moving.frame.size.width / 2, true))
+                    }
+                }
+            }
+            for top in others {
+                for bottom in others where top.id != bottom.id && top.frame.maxY <= bottom.frame.minY {
+                    let available = bottom.frame.minY - top.frame.maxY - moving.frame.size.height
+                    if available >= 0 {
+                        let desired = top.frame.maxY + available / 2
+                        yCandidates.append((desired - moving.frame.minY, desired + moving.frame.size.height / 2, true))
+                    }
+                }
+            }
+        }
+        let bestX = xCandidates.filter { abs($0.0) <= thresholdPoints }.min { abs($0.0) < abs($1.0) }
+        let bestY = yCandidates.filter { abs($0.0) <= thresholdPoints }.min { abs($0.0) < abs($1.0) }
+        let bounded = clamp(
+            moving.frame.translated(dx: bestX?.0 ?? 0, dy: bestY?.0 ?? 0),
+            to: canvasSize
+        )
+        return WidgetCanvasSnapResult(
+            frame: bounded,
+            verticalGuides: bestX.map { [$0.1] } ?? [],
+            horizontalGuides: bestY.map { [$0.1] } ?? [],
+            hasEqualHorizontalSpacing: bestX?.2 ?? false,
+            hasEqualVerticalSpacing: bestY?.2 ?? false
+        )
+    }
+
+    public static func clamp(_ frame: LRect, to canvasSize: LSize) -> LRect {
+        guard canvasSize.isValid, frame.isValid else { return frame }
+        let width = min(frame.size.width, canvasSize.width)
+        let height = min(frame.size.height, canvasSize.height)
+        return LRect(
+            x: min(max(frame.minX, 0), canvasSize.width - width),
+            y: min(max(frame.minY, 0), canvasSize.height - height),
+            width: width,
+            height: height
+        )
+    }
+
+    public static func maximumScale(
+        currentFrame: LRect,
+        currentScale: Double,
+        center: LPoint,
+        canvasSize: LSize
+    ) -> Double {
+        guard currentFrame.isValid, currentScale > 0, canvasSize.isValid else { return currentScale }
+        let availableWidth = 2 * min(center.x, canvasSize.width - center.x)
+        let availableHeight = 2 * min(center.y, canvasSize.height - center.y)
+        return max(0.01, currentScale * min(
+            availableWidth / currentFrame.size.width,
+            availableHeight / currentFrame.size.height
+        ))
+    }
+}
