@@ -600,7 +600,7 @@ struct DateCalendarWidgetView: View {
     }
 
     private func fullDate(_ date: Date) -> some View {
-        VStack(alignment: .leading, spacing: 5 * layoutScale) {
+        VStack(alignment: .leading, spacing: 2 * layoutScale) {
             if widget.dateCalendar.showsWeekday {
                 Text(format(date, "EEEE"))
                     .font(.system(
@@ -717,11 +717,16 @@ struct DateCalendarWidgetView: View {
         calendar: Calendar
     ) -> some View {
         let isToday = cell.date.map { calendar.isDateInToday($0) } ?? false
-        return ZStack {
+        return ZStack(alignment: .center) {
             if isToday {
                 Circle()
                     .fill(Color.accentColor.opacity(0.92))
+                    .frame(
+                        width: todayHighlightSize,
+                        height: todayHighlightSize
+                    )
             }
+
             Text(cell.date.map { String(calendar.component(.day, from: $0)) } ?? "")
                 .font(.system(
                     size: 10 * layoutScale,
@@ -733,11 +738,22 @@ struct DateCalendarWidgetView: View {
                         ? Color.white
                         : Color.white.opacity(0.28)
                 )
+                .frame(
+                    width: todayHighlightSize,
+                    height: todayHighlightSize,
+                    alignment: .center
+                )
         }
-        .frame(width: calendarCellWidth, height: 23 * layoutScale)
+        .frame(
+            width: calendarCellWidth,
+            height: calendarCellHeight,
+            alignment: .center
+        )
     }
 
     private var calendarCellWidth: CGFloat { 25 * layoutScale }
+    private var calendarCellHeight: CGFloat { 23 * layoutScale }
+    private var todayHighlightSize: CGFloat { 19 * layoutScale }
     private var calendarColumnSpacing: CGFloat { 4 * layoutScale }
     private var calendarWidth: CGFloat {
         calendarCellWidth * 7 + calendarColumnSpacing * 6
