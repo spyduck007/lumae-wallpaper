@@ -557,66 +557,88 @@ struct DateCalendarWidgetView: View {
     }
 
     private func compactDate(_ date: Date) -> some View {
-        VStack(alignment: .leading, spacing: 3 * layoutScale) {
-            if widget.dateCalendar.showsWeekday {
-                Text(format(date, "EEEE").uppercased())
+        HStack(alignment: .center, spacing: 12 * layoutScale) {
+            VStack(alignment: .leading, spacing: 2 * layoutScale) {
+                if widget.dateCalendar.showsWeekday {
+                    Text(format(date, "EEE").uppercased())
+                        .font(.system(
+                            size: 10 * layoutScale,
+                            weight: .bold,
+                            design: .rounded
+                        ))
+                        .tracking(1.1 * layoutScale)
+                        .foregroundStyle(.white.opacity(0.58))
+                }
+
+                Text(format(date, "MMM").uppercased())
                     .font(.system(
-                        size: 12 * layoutScale,
+                        size: 16 * layoutScale,
                         weight: .semibold,
                         design: .rounded
                     ))
-                    .tracking(1.2 * layoutScale)
-                    .foregroundStyle(.white.opacity(0.64))
+
+                if widget.dateCalendar.showsYear {
+                    Text(format(date, "yyyy"))
+                        .font(.system(
+                            size: 9 * layoutScale,
+                            weight: .medium,
+                            design: .rounded
+                        ))
+                        .foregroundStyle(.white.opacity(0.48))
+                }
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 7 * layoutScale) {
+            Text(format(date, "d"))
+                .font(.system(
+                    size: 46 * layoutScale,
+                    weight: .semibold,
+                    design: .rounded
+                ))
+                .monospacedDigit()
+        }
+        .fixedSize()
+    }
+
+    private func fullDate(_ date: Date) -> some View {
+        VStack(alignment: .leading, spacing: 5 * layoutScale) {
+            if widget.dateCalendar.showsWeekday {
+                Text(format(date, "EEEE"))
+                    .font(.system(
+                        size: 15 * layoutScale,
+                        weight: .semibold,
+                        design: .rounded
+                    ))
+                    .foregroundStyle(.white.opacity(0.62))
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8 * layoutScale) {
                 Text(format(date, "MMMM"))
                     .font(.system(
-                        size: 24 * layoutScale,
+                        size: 28 * layoutScale,
                         weight: .medium,
                         design: .rounded
                     ))
+
                 Text(format(date, "d"))
                     .font(.system(
-                        size: 38 * layoutScale,
+                        size: 34 * layoutScale,
                         weight: .semibold,
                         design: .rounded
                     ))
                     .monospacedDigit()
-            }
 
-            if widget.dateCalendar.showsYear {
-                Text(format(date, "yyyy"))
-                    .font(.system(
-                        size: 12 * layoutScale,
-                        weight: .medium,
-                        design: .rounded
-                    ))
-                    .foregroundStyle(.white.opacity(0.58))
+                if widget.dateCalendar.showsYear {
+                    Text(format(date, "yyyy"))
+                        .font(.system(
+                            size: 14 * layoutScale,
+                            weight: .medium,
+                            design: .rounded
+                        ))
+                        .foregroundStyle(.white.opacity(0.52))
+                }
             }
         }
-    }
-
-    private func fullDate(_ date: Date) -> some View {
-        VStack(alignment: .leading, spacing: 6 * layoutScale) {
-            if widget.dateCalendar.showsWeekday {
-                Text(format(date, "EEEE"))
-                    .font(.system(
-                        size: 18 * layoutScale,
-                        weight: .semibold,
-                        design: .rounded
-                    ))
-                    .foregroundStyle(.white.opacity(0.68))
-            }
-
-            Text(fullDateText(date))
-                .font(.system(
-                    size: 30 * layoutScale,
-                    weight: .medium,
-                    design: .rounded
-                ))
-                .lineLimit(1)
-        }
+        .fixedSize()
     }
 
     private func monthCalendar(_ date: Date) -> some View {
@@ -624,29 +646,46 @@ struct DateCalendarWidgetView: View {
         let cells = calendarCells(for: date, calendar: calendar)
         let symbols = weekdaySymbols(calendar: calendar)
 
-        return VStack(alignment: .leading, spacing: 11 * layoutScale) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(format(date, widget.dateCalendar.showsYear ? "MMMM yyyy" : "MMMM"))
+        return VStack(alignment: .leading, spacing: 10 * layoutScale) {
+            HStack(alignment: .firstTextBaseline, spacing: 8 * layoutScale) {
+                Text(format(date, "MMMM"))
                     .font(.system(
-                        size: 19 * layoutScale,
+                        size: 20 * layoutScale,
                         weight: .semibold,
                         design: .rounded
                     ))
-                Spacer(minLength: 16 * layoutScale)
+
+                if widget.dateCalendar.showsYear {
+                    Text(format(date, "yyyy"))
+                        .font(.system(
+                            size: 12 * layoutScale,
+                            weight: .medium,
+                            design: .rounded
+                        ))
+                        .foregroundStyle(.white.opacity(0.52))
+                }
+
+                Spacer(minLength: 0)
+
                 Text(format(date, "d"))
                     .font(.system(
-                        size: 13 * layoutScale,
+                        size: 12 * layoutScale,
                         weight: .semibold,
                         design: .rounded
                     ))
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(.white.opacity(0.58))
             }
+            .frame(width: calendarWidth)
 
             LazyVGrid(
                 columns: Array(
-                    repeating: GridItem(.fixed(25 * layoutScale), spacing: 3 * layoutScale),
+                    repeating: GridItem(
+                        .fixed(calendarCellWidth),
+                        spacing: calendarColumnSpacing
+                    ),
                     count: 7
                 ),
+                alignment: .leading,
                 spacing: 4 * layoutScale
             ) {
                 ForEach(Array(symbols.enumerated()), id: \.offset) { _, symbol in
@@ -656,15 +695,21 @@ struct DateCalendarWidgetView: View {
                             weight: .semibold,
                             design: .rounded
                         ))
-                        .foregroundStyle(.white.opacity(0.48))
-                        .frame(width: 25 * layoutScale)
+                        .foregroundStyle(.white.opacity(0.44))
+                        .frame(
+                            width: calendarCellWidth,
+                            height: 16 * layoutScale
+                        )
                 }
 
                 ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
                     calendarCell(cell, calendar: calendar)
                 }
             }
+            .frame(width: calendarWidth, alignment: .leading)
         }
+        .frame(width: calendarWidth, alignment: .leading)
+        .fixedSize()
     }
 
     private func calendarCell(
@@ -686,10 +731,16 @@ struct DateCalendarWidgetView: View {
                 .foregroundStyle(
                     cell.isCurrentMonth
                         ? Color.white
-                        : Color.white.opacity(0.30)
+                        : Color.white.opacity(0.28)
                 )
         }
-        .frame(width: 25 * layoutScale, height: 23 * layoutScale)
+        .frame(width: calendarCellWidth, height: 23 * layoutScale)
+    }
+
+    private var calendarCellWidth: CGFloat { 25 * layoutScale }
+    private var calendarColumnSpacing: CGFloat { 4 * layoutScale }
+    private var calendarWidth: CGFloat {
+        calendarCellWidth * 7 + calendarColumnSpacing * 6
     }
 
     private var configuredCalendar: Calendar {

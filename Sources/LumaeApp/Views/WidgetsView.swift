@@ -648,24 +648,32 @@ struct WidgetsView: View {
                 )
             )
             Divider()
-            Picker(
-                "Size",
-                selection: Binding(
-                    get: { widget.size },
-                    set: { size in
-                        model.setWidgetSize(size, id: widget.id)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                            constrainWidgetToCanvas(widget.id)
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Size")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker(
+                    "Size",
+                    selection: Binding(
+                        get: { widget.size },
+                        set: { size in
+                            model.setWidgetSize(size, id: widget.id)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                constrainWidgetToCanvas(widget.id)
+                            }
                         }
-                    }
-                )
-            ) {
-                Text("Small").tag(DesktopWidgetSize.small)
-                Text("Medium").tag(DesktopWidgetSize.medium)
-                Text("Large").tag(DesktopWidgetSize.large)
-                Text("Custom").tag(DesktopWidgetSize.custom)
+                    )
+                ) {
+                    Text("Small").tag(DesktopWidgetSize.small)
+                    Text("Medium").tag(DesktopWidgetSize.medium)
+                    Text("Large").tag(DesktopWidgetSize.large)
+                    Text("Custom").tag(DesktopWidgetSize.custom)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
             }
-            .pickerStyle(.segmented)
 
             if widget.size == .custom {
                 Text("Drag a corner handle to resize proportionally.")
@@ -1413,21 +1421,23 @@ private struct WidgetChooserView: View {
                     Spacer(minLength: 0)
                 }
 
-                DesktopWidgetContentView(widget: sampleWidget(kind))
-                    .scaleEffect(previewScale(kind))
-                    .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+                chooserPreview(kind)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
                     .background(
                         LinearGradient(
                             colors: [
-                                Color.black.opacity(0.82),
-                                Color.gray.opacity(0.55)
+                                Color.black.opacity(0.86),
+                                Color.gray.opacity(0.48)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                     )
-                    .clipped()
+                    .clipShape(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
 
                 Text(description)
                     .font(.caption2)
@@ -1448,37 +1458,85 @@ private struct WidgetChooserView: View {
         .buttonStyle(.plain)
     }
 
-    private func sampleWidget(_ kind: DesktopWidgetKind) -> DesktopWidget {
+    @ViewBuilder
+    private func chooserPreview(_ kind: DesktopWidgetKind) -> some View {
         switch kind {
         case .digitalClock:
-            return DesktopWidget(
-                kind: .digitalClock,
-                size: .small,
-                digitalClock: DigitalClockWidgetSettings(
-                    uses24HourTime: false,
-                    showsSeconds: false,
-                    showsBackground: true
-                )
-            )
-        case .nowPlaying:
-            return DesktopWidget(kind: .nowPlaying, size: .small)
-        case .dateCalendar:
-            return DesktopWidget(
-                kind: .dateCalendar,
-                size: .small,
-                dateCalendar: DateCalendarWidgetSettings(mode: .compactDate)
-            )
-        case .battery:
-            return DesktopWidget(kind: .battery, size: .small)
-        }
-    }
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("10:39")
+                    .font(.system(size: 21, weight: .medium, design: .rounded))
+                Text("AM")
+                    .font(.system(size: 8, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
 
-    private func previewScale(_ kind: DesktopWidgetKind) -> CGFloat {
-        switch kind {
-        case .digitalClock: return 0.48
-        case .nowPlaying: return 0.38
-        case .dateCalendar: return 0.52
-        case .battery: return 0.52
+        case .nowPlaying:
+            HStack(spacing: 7) {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.white.opacity(0.10))
+                    .frame(width: 31, height: 31)
+                    .overlay {
+                        Image(systemName: "music.note")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.58))
+                    }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Nothing Playing")
+                        .font(.system(size: 8, weight: .semibold, design: .rounded))
+                    Text("Play audio to see it here")
+                        .font(.system(size: 6, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.52))
+                    Capsule()
+                        .fill(.white.opacity(0.20))
+                        .frame(width: 55, height: 2)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(7)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+
+        case .dateCalendar:
+            HStack(alignment: .center, spacing: 7) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("WED")
+                        .font(.system(size: 6, weight: .bold, design: .rounded))
+                        .tracking(0.8)
+                        .foregroundStyle(.white.opacity(0.58))
+                    Text("JUL")
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                }
+                Text("15")
+                    .font(.system(size: 24, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+
+        case .battery:
+            HStack(spacing: 7) {
+                Image(systemName: "battery.100percent")
+                    .font(.system(size: 16, weight: .medium))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("100%")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Text("Charged")
+                        .font(.system(size: 6, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.56))
+                    Capsule()
+                        .fill(.white.opacity(0.78))
+                        .frame(width: 49, height: 2)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
         }
     }
 
