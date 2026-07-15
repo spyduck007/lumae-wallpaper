@@ -85,15 +85,13 @@ final class WallpaperWindowManager {
         sourceSize: LSize,
         mode: WallpaperScalingMode,
         spanSlice: SpanSlice? = nil,
-        maxFrameRate: Int,
         widgets: [DesktopWidget]
     ) {
         let view = VideoWallpaperView(
             player: player,
             sourceSize: sourceSize,
             mode: mode,
-            spanSlice: spanSlice,
-            maxFrameRate: maxFrameRate
+            spanSlice: spanSlice
         )
         install(view: view, display: display, widgets: widgets)
     }
@@ -307,8 +305,7 @@ final class VideoWallpaperView: NSView {
         player: AVPlayer,
         sourceSize: LSize,
         mode: WallpaperScalingMode,
-        spanSlice: SpanSlice?,
-        maxFrameRate: Int
+        spanSlice: SpanSlice?
     ) {
         self.sourceSize = sourceSize
         self.mode = mode
@@ -318,12 +315,6 @@ final class VideoWallpaperView: NSView {
         layer?.backgroundColor = NSColor.black.cgColor
         playerLayer.player = player
         playerLayer.videoGravity = .resize
-        let preferredRate = Float(min(max(maxFrameRate, 1), 120))
-        playerLayer.preferredFrameRateRange = CAFrameRateRange(
-            minimum: min(preferredRate, 24),
-            maximum: preferredRate,
-            preferred: preferredRate
-        )
         layer?.addSublayer(playerLayer)
     }
 

@@ -54,10 +54,10 @@ final class UpdateController: ObservableObject {
         canCheckObservation = updater.observe(
             \.canCheckForUpdates,
             options: [.initial, .new]
-        ) { [weak self] updater, _ in
-            let canCheck = updater.canCheckForUpdates
+        ) { [weak self] _, _ in
             Task { @MainActor [weak self] in
-                self?.canCheckForUpdates = canCheck
+                guard let self else { return }
+                self.canCheckForUpdates = self.updater.canCheckForUpdates
             }
         }
     }

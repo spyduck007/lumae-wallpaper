@@ -170,7 +170,6 @@ final class WallpaperEngine {
                     sourceSize: sourceSize,
                     mode: span ? .stretch : state.settings.defaultScalingMode,
                     spanSlice: slice,
-                    maxFrameRate: state.settings.maximumFrameRate,
                     widgets: resolvedWidgets(
                         for: display,
                         state: state,
@@ -223,7 +222,6 @@ final class WallpaperEngine {
                 display: display,
                 sourceSize: sourceSize,
                 mode: scalingMode,
-                maxFrameRate: maxFrameRate,
                 widgets: widgets
             )
             displayVideos[display.id] = playback

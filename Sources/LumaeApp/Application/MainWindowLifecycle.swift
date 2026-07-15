@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 enum MainWindowLifecycle {
-    static let windowIdentifier = NSUserInterfaceItemIdentifier("com.lumae.wallpaper.main-window")
+    nonisolated static let windowIdentifierRawValue = "com.lumae.wallpaper.main-window"
     static var isTerminating = false
 
     static func show(openWindow: OpenWindowAction) {
@@ -22,7 +22,8 @@ enum MainWindowLifecycle {
     }
 
     static var mainWindow: NSWindow? {
-        NSApp.windows.first { $0.identifier == windowIdentifier }
+        let identifier = NSUserInterfaceItemIdentifier(windowIdentifierRawValue)
+        return NSApp.windows.first { $0.identifier == identifier }
     }
 }
 
@@ -59,7 +60,9 @@ struct MainWindowLifecycleBridge: NSViewRepresentable {
             detach()
 
             self.window = window
-            window.identifier = MainWindowLifecycle.windowIdentifier
+            window.identifier = NSUserInterfaceItemIdentifier(
+                MainWindowLifecycle.windowIdentifierRawValue
+            )
 
             closeObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification,
