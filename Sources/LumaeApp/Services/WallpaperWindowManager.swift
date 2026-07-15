@@ -1,5 +1,7 @@
 import AppKit
 import AVFoundation
+import Combine
+import QuartzCore
 import SwiftUI
 import LumaeCore
 
@@ -83,13 +85,15 @@ final class WallpaperWindowManager {
         sourceSize: LSize,
         mode: WallpaperScalingMode,
         spanSlice: SpanSlice? = nil,
+        maxFrameRate: Int,
         widgets: [DesktopWidget]
     ) {
         let view = VideoWallpaperView(
             player: player,
             sourceSize: sourceSize,
             mode: mode,
-            spanSlice: spanSlice
+            spanSlice: spanSlice,
+            maxFrameRate: maxFrameRate
         )
         install(view: view, display: display, widgets: widgets)
     }
@@ -113,6 +117,15 @@ final class WallpaperWindowManager {
         window.setFrame(frame, display: true)
         window.orderFrontRegardless()
         windows[display.id] = window
+    }
+
+    func updateWidgets(_ widgetsByDisplayID: [String: [DesktopWidget]]) {
+        for (displayID, window) in windows {
+            guard let composite = window.contentView as? WallpaperCompositeView else {
+                continue
+            }
+            composite.updateWidgets(widgetsByDisplayID[displayID] ?? [])
+        }
     }
 
     private func restoreDesktopWindowOrder() {
@@ -165,6 +178,9 @@ final class WallpaperWindow: NSWindow {
 }
 
 final class WallpaperCompositeView: NSView {
+    private var widgetOverlay: NSHostingView<DesktopWidgetOverlayView>?
+    private let widgetState = WidgetOverlayState()
+
     init(wallpaperView: NSView, widgets: [DesktopWidget]) {
         super.init(frame: .zero)
         wantsLayer = true
@@ -180,28 +196,46 @@ final class WallpaperCompositeView: NSView {
             wallpaperView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
 
+        updateWidgets(widgets)
+    }
+
+    func updateWidgets(_ widgets: [DesktopWidget]) {
         let enabledWidgets = widgets.filter(\.isEnabled)
-        if !enabledWidgets.isEmpty {
+        if widgetState.widgets != enabledWidgets {
+            widgetState.widgets = enabledWidgets
+        }
+
+        guard !enabledWidgets.isEmpty else {
+            widgetOverlay?.removeFromSuperview()
+            widgetOverlay = nil
+            return
+        }
+
+        if widgetOverlay == nil {
             let overlay = NSHostingView(
-                rootView: DesktopWidgetOverlayView(widgets: enabledWidgets)
+                rootView: DesktopWidgetOverlayView(state: widgetState)
             )
             overlay.translatesAutoresizingMaskIntoConstraints = false
             overlay.wantsLayer = true
             overlay.layer?.backgroundColor = NSColor.clear.cgColor
             addSubview(overlay)
-
             NSLayoutConstraint.activate([
                 overlay.leadingAnchor.constraint(equalTo: leadingAnchor),
                 overlay.trailingAnchor.constraint(equalTo: trailingAnchor),
                 overlay.topAnchor.constraint(equalTo: topAnchor),
                 overlay.bottomAnchor.constraint(equalTo: bottomAnchor)
             ])
+            widgetOverlay = overlay
         }
     }
 
     required init?(coder: NSCoder) {
         nil
     }
+}
+
+final class WidgetOverlayState: ObservableObject {
+    @Published var widgets: [DesktopWidget] = []
 }
 
 final class StaticWallpaperView: NSView {
@@ -273,7 +307,8 @@ final class VideoWallpaperView: NSView {
         player: AVPlayer,
         sourceSize: LSize,
         mode: WallpaperScalingMode,
-        spanSlice: SpanSlice?
+        spanSlice: SpanSlice?,
+        maxFrameRate: Int
     ) {
         self.sourceSize = sourceSize
         self.mode = mode
@@ -283,6 +318,12 @@ final class VideoWallpaperView: NSView {
         layer?.backgroundColor = NSColor.black.cgColor
         playerLayer.player = player
         playerLayer.videoGravity = .resize
+        let preferredRate = Float(min(max(maxFrameRate, 1), 120))
+        playerLayer.preferredFrameRateRange = CAFrameRateRange(
+            minimum: min(preferredRate, 24),
+            maximum: preferredRate,
+            preferred: preferredRate
+        )
         layer?.addSublayer(playerLayer)
     }
 

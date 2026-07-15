@@ -75,7 +75,7 @@ final class NowPlayingService: ObservableObject {
         loadMediaRemote()
         refresh()
         timer = Timer.scheduledTimer(
-            withTimeInterval: 1,
+            withTimeInterval: 3,
             repeats: true
         ) { [weak self] _ in
             self?.refresh()
@@ -165,7 +165,7 @@ final class NowPlayingService: ObservableObject {
             mediaRemoteArtworkSignature = artworkSignature
         }
 
-        snapshot = NowPlayingSnapshot(
+        publish(NowPlayingSnapshot(
             title: title,
             artist: stringValue(info, key: .artist, aliases: ["artist"]),
             album: stringValue(info, key: .album, aliases: ["album"]),
@@ -183,7 +183,7 @@ final class NowPlayingService: ObservableObject {
                 aliases: ["playbackRate"]
             ) > 0,
             updatedAt: Date()
-        )
+        ))
         return true
     }
 
@@ -191,7 +191,7 @@ final class NowPlayingService: ObservableObject {
         guard NSRunningApplication.runningApplications(
             withBundleIdentifier: "com.spotify.client"
         ).isEmpty == false else {
-            snapshot = .empty
+            publish(.empty)
             return
         }
 
@@ -206,13 +206,13 @@ final class NowPlayingService: ObservableObject {
         var error: NSDictionary?
         guard let result = NSAppleScript(source: source)?.executeAndReturnError(&error),
               error == nil else {
-            snapshot = .empty
+            publish(.empty)
             return
         }
 
         let lines = result.stringValue?.components(separatedBy: .newlines) ?? []
         guard lines.count >= 6, !lines[0].isEmpty else {
-            snapshot = .empty
+            publish(.empty)
             return
         }
 
@@ -222,7 +222,7 @@ final class NowPlayingService: ObservableObject {
         let artworkString = lines[safe: 6] ?? ""
         let newArtworkURL = URL(string: artworkString)
 
-        snapshot = NowPlayingSnapshot(
+        publish(NowPlayingSnapshot(
             title: lines[0],
             artist: lines[safe: 1] ?? "",
             album: lines[safe: 2] ?? "",
@@ -232,7 +232,7 @@ final class NowPlayingService: ObservableObject {
             duration: durationMilliseconds / 1_000,
             isPlaying: state.caseInsensitiveCompare("playing") == .orderedSame,
             updatedAt: Date()
-        )
+        ))
 
         if let newArtworkURL, newArtworkURL != artworkURL {
             artworkURL = newArtworkURL
@@ -251,6 +251,32 @@ final class NowPlayingService: ObservableObject {
             }
         }
         artworkDownloadTask?.resume()
+    }
+
+    private func publish(_ next: NowPlayingSnapshot) {
+        let sameArtwork: Bool
+        switch (snapshot.artwork, next.artwork) {
+        case (nil, nil):
+            sameArtwork = true
+        case let (current?, incoming?):
+            sameArtwork = current === incoming
+        default:
+            sameArtwork = false
+        }
+
+        let sameMetadata = snapshot.title == next.title
+            && snapshot.artist == next.artist
+            && snapshot.album == next.album
+            && abs(snapshot.duration - next.duration) < 0.5
+            && snapshot.isPlaying == next.isPlaying
+            && sameArtwork
+        let expectedElapsed = snapshot.elapsed(at: next.updatedAt)
+        let elapsedDrift = abs(expectedElapsed - next.elapsedTime)
+
+        if sameMetadata, elapsedDrift < 2.5 {
+            return
+        }
+        snapshot = next
     }
 
     private func stringValue(

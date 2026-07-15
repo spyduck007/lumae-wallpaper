@@ -3,12 +3,12 @@ import SwiftUI
 import LumaeCore
 
 struct DesktopWidgetOverlayView: View {
-    let widgets: [DesktopWidget]
+    @ObservedObject var state: WidgetOverlayState
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                ForEach(widgets.filter(\.isEnabled)) { widget in
+                ForEach(state.widgets) { widget in
                     DesktopWidgetPositionedView(
                         widget: widget,
                         canvasSize: proxy.size
@@ -194,10 +194,25 @@ struct DigitalClockWidgetView: View {
     }
 
     private func formatted(_ date: Date, format: String) -> String {
+        switch format {
+        case "HH:mm": return Self.twentyFourHourFormatter.string(from: date)
+        case "h:mm": return Self.twelveHourFormatter.string(from: date)
+        case "ss": return Self.secondsFormatter.string(from: date)
+        case "a": return Self.periodFormatter.string(from: date)
+        default: return Self.makeFormatter(format).string(from: date)
+        }
+    }
+
+    private static let twentyFourHourFormatter = makeFormatter("HH:mm")
+    private static let twelveHourFormatter = makeFormatter("h:mm")
+    private static let secondsFormatter = makeFormatter("ss")
+    private static let periodFormatter = makeFormatter("a")
+
+    private static func makeFormatter(_ format: String) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale.autoupdatingCurrent
         formatter.dateFormat = format
-        return formatter.string(from: date)
+        return formatter
     }
 }
 
@@ -207,8 +222,10 @@ struct NowPlayingWidgetView: View {
     @ObservedObject private var service = NowPlayingService.shared
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 12.0)) { context in
-            let snapshot = service.snapshot
+        let snapshot = service.snapshot
+        let refreshInterval = snapshot.isPlaying ? 0.5 : 60.0
+
+        TimelineView(.periodic(from: .now, by: refreshInterval)) { context in
             let elapsed = snapshot.elapsed(at: context.date)
 
             HStack(spacing: artworkGap) {

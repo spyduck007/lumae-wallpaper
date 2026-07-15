@@ -51,6 +51,22 @@ final class WallpaperEngine {
         try? await applyConfiguration(state: state, topology: topology)
     }
 
+    func updateWidgets(
+        state: PersistedApplicationState,
+        topology: DisplayTopology
+    ) {
+        currentState = state
+        var widgetsByDisplayID: [String: [DesktopWidget]] = [:]
+        for display in topology.displays {
+            widgetsByDisplayID[display.id] = resolvedWidgets(
+                for: display,
+                state: state,
+                topology: topology
+            )
+        }
+        windows.updateWidgets(widgetsByDisplayID)
+    }
+
     func pause() {
         sharedVideo.pause()
         displayVideos.values.forEach { $0.pause() }
@@ -132,10 +148,10 @@ final class WallpaperEngine {
                     mode: span ? .stretch : state.settings.defaultScalingMode,
                     spanSlice: slice,
                     widgets: resolvedWidgets(
-                    for: display,
-                    state: state,
-                    topology: topology
-                )
+                        for: display,
+                        state: state,
+                        topology: topology
+                    )
                 )
             }
 
@@ -154,11 +170,12 @@ final class WallpaperEngine {
                     sourceSize: sourceSize,
                     mode: span ? .stretch : state.settings.defaultScalingMode,
                     spanSlice: slice,
+                    maxFrameRate: state.settings.maximumFrameRate,
                     widgets: resolvedWidgets(
-                    for: display,
-                    state: state,
-                    topology: topology
-                )
+                        for: display,
+                        state: state,
+                        topology: topology
+                    )
                 )
             }
             sharedVideo.play()
@@ -206,6 +223,7 @@ final class WallpaperEngine {
                 display: display,
                 sourceSize: sourceSize,
                 mode: scalingMode,
+                maxFrameRate: maxFrameRate,
                 widgets: widgets
             )
             displayVideos[display.id] = playback

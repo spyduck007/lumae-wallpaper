@@ -1,4 +1,6 @@
 import AppKit
+import CoreImage
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 import LumaeCore
 
@@ -20,10 +22,11 @@ struct WidgetVisualSurface: View {
             if resolvedStyle != .none {
                 if reduceTransparency {
                     shape.fill(solidFallbackColor)
-                } else {
+                } else if resolvedStyle != .clear {
                     WidgetBackdropBlur(
                         material: material,
-                        blendingMode: .withinWindow
+                        blendingMode: .withinWindow,
+                        effectOpacity: effectOpacity
                     )
                     .clipShape(shape)
                 }
@@ -72,7 +75,6 @@ struct WidgetVisualSurface: View {
                     .mask(shape)
             }
         }
-        .compositingGroup()
         .allowsHitTesting(false)
     }
 
@@ -84,9 +86,18 @@ struct WidgetVisualSurface: View {
         increaseContrast && style != .none ? .highContrast : style
     }
 
+    private var effectOpacity: CGFloat {
+        switch resolvedStyle {
+        case .glass: return 0.52
+        case .clear: return 0
+        case .highContrast: return 0.92
+        case .none: return 0
+        }
+    }
+
     private var material: NSVisualEffectView.Material {
         switch resolvedStyle {
-        case .glass: return .hudWindow
+        case .glass: return .underWindowBackground
         case .clear: return .underWindowBackground
         case .highContrast: return .popover
         case .none: return .underWindowBackground
@@ -95,8 +106,8 @@ struct WidgetVisualSurface: View {
 
     private var baseTint: Color {
         switch resolvedStyle {
-        case .glass: return .black.opacity(0.10)
-        case .clear: return .black.opacity(0.025)
+        case .glass: return .black.opacity(0.015)
+        case .clear: return .white.opacity(0.006)
         case .highContrast: return .black.opacity(0.62)
         case .none: return .clear
         }
@@ -104,7 +115,8 @@ struct WidgetVisualSurface: View {
 
     private var solidFallbackColor: Color {
         switch resolvedStyle {
-        case .glass, .clear: return .black.opacity(0.70)
+        case .glass: return .black.opacity(0.62)
+        case .clear: return .black.opacity(0.42)
         case .highContrast: return .black.opacity(0.84)
         case .none: return .clear
         }
@@ -112,16 +124,16 @@ struct WidgetVisualSurface: View {
 
     private var artworkTintOpacity: Double {
         switch resolvedStyle {
-        case .glass: return 0.16
-        case .clear: return 0.09
+        case .glass: return 0.13
+        case .clear: return 0.045
         case .highContrast, .none: return 0
         }
     }
 
     private var highlightOpacity: Double {
         switch resolvedStyle {
-        case .glass: return 0.22
-        case .clear: return 0.13
+        case .glass: return 0.30
+        case .clear: return 0.09
         case .highContrast: return 0.18
         case .none: return 0
         }
@@ -129,8 +141,8 @@ struct WidgetVisualSurface: View {
 
     private var bottomShadeOpacity: Double {
         switch resolvedStyle {
-        case .glass: return 0.10
-        case .clear: return 0.035
+        case .glass: return 0.055
+        case .clear: return 0.008
         case .highContrast: return 0.18
         case .none: return 0
         }
@@ -138,8 +150,8 @@ struct WidgetVisualSurface: View {
 
     private var noiseOpacity: Double {
         switch resolvedStyle {
-        case .glass: return 0.055
-        case .clear: return 0.030
+        case .glass: return 0.032
+        case .clear: return 0.008
         case .highContrast: return 0.025
         case .none: return 0
         }
@@ -147,8 +159,8 @@ struct WidgetVisualSurface: View {
 
     private var borderHighlightOpacity: Double {
         switch resolvedStyle {
-        case .glass: return 0.34
-        case .clear: return 0.22
+        case .glass: return 0.48
+        case .clear: return 0.16
         case .highContrast: return 0.40
         case .none: return 0
         }
@@ -156,8 +168,8 @@ struct WidgetVisualSurface: View {
 
     private var borderLowOpacity: Double {
         switch resolvedStyle {
-        case .glass: return 0.10
-        case .clear: return 0.06
+        case .glass: return 0.08
+        case .clear: return 0.025
         case .highContrast: return 0.20
         case .none: return 0
         }
@@ -165,8 +177,8 @@ struct WidgetVisualSurface: View {
 
     private var innerShadowOpacity: Double {
         switch resolvedStyle {
-        case .glass: return 0.20
-        case .clear: return 0.10
+        case .glass: return 0.16
+        case .clear: return 0.045
         case .highContrast: return 0.28
         case .none: return 0
         }
@@ -176,6 +188,7 @@ struct WidgetVisualSurface: View {
 private struct WidgetBackdropBlur: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
+    let effectOpacity: CGFloat
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
@@ -183,6 +196,7 @@ private struct WidgetBackdropBlur: NSViewRepresentable {
         view.isEmphasized = false
         view.material = material
         view.blendingMode = blendingMode
+        view.alphaValue = effectOpacity
         return view
     }
 
@@ -190,6 +204,7 @@ private struct WidgetBackdropBlur: NSViewRepresentable {
         view.state = .active
         view.material = material
         view.blendingMode = blendingMode
+        view.alphaValue = effectOpacity
     }
 }
 
@@ -197,25 +212,34 @@ private struct WidgetNoiseTexture: View {
     let opacity: Double
 
     var body: some View {
-        Canvas(opaque: false, rendersAsynchronously: true) { context, size in
-            guard opacity > 0, size.width > 0, size.height > 0 else { return }
-            let pointCount = min(max(Int(size.width * size.height / 650), 80), 420)
-            for index in 0..<pointCount {
-                let x = hash(index * 17 + 11) * size.width
-                let y = hash(index * 31 + 7) * size.height
-                let alpha = opacity * (0.35 + hash(index * 13 + 5) * 0.65)
-                context.fill(
-                    Path(ellipseIn: CGRect(x: x, y: y, width: 0.8, height: 0.8)),
-                    with: .color(.white.opacity(alpha))
-                )
-            }
-        }
+        Image(nsImage: WidgetNoiseAsset.image)
+            .resizable(capInsets: EdgeInsets(), resizingMode: .tile)
+            .interpolation(.none)
+            .opacity(opacity)
     }
+}
 
-    private func hash(_ value: Int) -> CGFloat {
-        let x = sin(Double(value) * 12.9898) * 43_758.5453
-        return CGFloat(x - floor(x))
-    }
+private enum WidgetNoiseAsset {
+    static let image: NSImage = {
+        let size = 64
+        let filter = CIFilter.randomGenerator()
+        guard let output = filter.outputImage?.cropped(
+            to: CGRect(x: 0, y: 0, width: size, height: size)
+        ) else {
+            return NSImage(size: NSSize(width: 1, height: 1))
+        }
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(
+            output,
+            from: output.extent
+        ) else {
+            return NSImage(size: NSSize(width: 1, height: 1))
+        }
+        return NSImage(
+            cgImage: cgImage,
+            size: NSSize(width: size, height: size)
+        )
+    }()
 }
 
 private struct WidgetSurfaceModifier: ViewModifier {
@@ -234,12 +258,32 @@ private struct WidgetSurfaceModifier: ViewModifier {
                 )
             }
             .shadow(
-                color: style == .none
-                    ? .black.opacity(0.50)
-                    : .black.opacity(style == .highContrast ? 0.34 : 0.24),
-                radius: (style == .none ? 7 : 14) * scale,
-                y: (style == .none ? 2 : 5) * scale
+                color: shadowColor,
+                radius: shadowRadius * scale,
+                y: shadowOffset * scale
             )
+    }
+
+    private var shadowColor: Color {
+        switch style {
+        case .glass: return .black.opacity(0.20)
+        case .clear: return .black.opacity(0.12)
+        case .highContrast: return .black.opacity(0.32)
+        case .none: return .black.opacity(0.46)
+        }
+    }
+
+    private var shadowRadius: CGFloat {
+        switch style {
+        case .glass: return 10
+        case .clear: return 6
+        case .highContrast: return 12
+        case .none: return 5
+        }
+    }
+
+    private var shadowOffset: CGFloat {
+        style == .none ? 2 : 4
     }
 }
 

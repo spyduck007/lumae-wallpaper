@@ -23,6 +23,7 @@ final class AppModel: ObservableObject {
     let launchAtLogin = LaunchAtLoginService()
 
     private var configurationApplyTask: Task<Void, Never>?
+    private var widgetRefreshTask: Task<Void, Never>?
     private var playlistRotationTask: Task<Void, Never>?
     private var widgetUndoStack: [WidgetHistoryEntry] = []
     private var widgetRedoStack: [WidgetHistoryEntry] = []
@@ -428,6 +429,23 @@ final class AppModel: ObservableObject {
             )
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func scheduleWidgetRefresh() {
+        widgetRefreshTask?.cancel()
+        widgetRefreshTask = Task { [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled, let self else { return }
+            do {
+                try await self.save()
+                self.engine.updateWidgets(
+                    state: self.state,
+                    topology: self.displayTopology
+                )
+            } catch {
+                self.errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -940,7 +958,7 @@ extension AppModel {
             return
         }
         updateWidgetWithoutHistory(id: id) { $0.position = position }
-        scheduleConfigurationApply()
+        scheduleWidgetRefresh()
     }
 
     func setWidgetSize(_ size: DesktopWidgetSize, id: UUID) {
@@ -1095,14 +1113,14 @@ extension AppModel {
         guard let entry = widgetUndoStack.popLast() else { return }
         widgetRedoStack.append(WidgetHistoryEntry(snapshot: captureWidgetSnapshot(), actionName: entry.actionName))
         restoreWidgetSnapshot(entry.snapshot)
-        scheduleConfigurationApply()
+        scheduleWidgetRefresh()
     }
 
     func redoWidgetEdit() {
         guard let entry = widgetRedoStack.popLast() else { return }
         widgetUndoStack.append(WidgetHistoryEntry(snapshot: captureWidgetSnapshot(), actionName: entry.actionName))
         restoreWidgetSnapshot(entry.snapshot)
-        scheduleConfigurationApply()
+        scheduleWidgetRefresh()
     }
 
     private func performWidgetMutation(named actionName: String, _ mutation: () -> Void) {
@@ -1112,7 +1130,7 @@ extension AppModel {
         widgetUndoStack.append(WidgetHistoryEntry(snapshot: before, actionName: actionName))
         if widgetUndoStack.count > 100 { widgetUndoStack.removeFirst(widgetUndoStack.count - 100) }
         widgetRedoStack.removeAll()
-        scheduleConfigurationApply()
+        scheduleWidgetRefresh()
     }
 
     private func captureWidgetSnapshot() -> WidgetSubsystemSnapshot {

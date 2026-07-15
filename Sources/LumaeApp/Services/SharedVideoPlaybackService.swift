@@ -20,9 +20,17 @@ final class SharedVideoPlaybackService {
 
     func prepare(url: URL, muted: Bool, maxFrameRate: Int) throws -> AVQueuePlayer {
         stop()
-        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-        let item = AVPlayerItem(asset: asset); item.preferredForwardBufferDuration = 3
-        let queue = AVQueuePlayer(); queue.isMuted = muted; queue.actionAtItemEnd = .advance; queue.automaticallyWaitsToMinimizeStalling = true
+        let asset = AVURLAsset(
+            url: url,
+            options: [AVURLAssetPreferPreciseDurationAndTimingKey: false]
+        )
+        let item = AVPlayerItem(asset: asset)
+        item.preferredForwardBufferDuration = 1
+        let queue = AVQueuePlayer()
+        queue.isMuted = muted
+        queue.actionAtItemEnd = .advance
+        queue.automaticallyWaitsToMinimizeStalling = false
+        queue.preventsDisplaySleepDuringVideoPlayback = false
         let looper = AVPlayerLooper(player: queue, templateItem: item)
         self.player = queue; self.looper = looper
         return queue
