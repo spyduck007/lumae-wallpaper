@@ -34,17 +34,6 @@ final class WallpaperWindowManager {
                 }
             }
         )
-        observers.append(
-            NotificationCenter.default.addObserver(
-                forName: NSApplication.didBecomeActiveNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in
-                    self?.restoreDesktopWindowOrder()
-                }
-            }
-        )
     }
 
     deinit {
@@ -183,6 +172,7 @@ final class WallpaperCompositeView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
+        layer?.drawsAsynchronously = true
 
         wallpaperView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(wallpaperView)
@@ -216,6 +206,7 @@ final class WallpaperCompositeView: NSView {
             overlay.translatesAutoresizingMaskIntoConstraints = false
             overlay.wantsLayer = true
             overlay.layer?.backgroundColor = NSColor.clear.cgColor
+            overlay.layer?.drawsAsynchronously = true
             addSubview(overlay)
             NSLayoutConstraint.activate([
                 overlay.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -267,6 +258,8 @@ final class StaticWallpaperView: NSView {
 
     override func layout() {
         super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         if let slice {
             imageLayer.frame = NSRect(
                 x: slice.contentFrameInDisplayPoints.minX,
@@ -292,6 +285,7 @@ final class StaticWallpaperView: NSView {
                 height: placement.frame.size.height
             )
         }
+        CATransaction.commit()
     }
 }
 
@@ -324,6 +318,8 @@ final class VideoWallpaperView: NSView {
 
     override func layout() {
         super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         if let slice {
             playerLayer.frame = NSRect(
                 x: slice.contentFrameInDisplayPoints.minX,
@@ -349,5 +345,6 @@ final class VideoWallpaperView: NSView {
                 height: placement.frame.size.height
             )
         }
+        CATransaction.commit()
     }
 }

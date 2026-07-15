@@ -223,7 +223,7 @@ struct NowPlayingWidgetView: View {
 
     var body: some View {
         let snapshot = service.snapshot
-        let refreshInterval = snapshot.isPlaying ? 0.5 : 60.0
+        let refreshInterval = snapshot.isPlaying ? 1.0 : 60.0
 
         TimelineView(.periodic(from: .now, by: refreshInterval)) { context in
             let elapsed = snapshot.elapsed(at: context.date)
@@ -249,7 +249,6 @@ struct NowPlayingWidgetView: View {
 
                     EqualizerView(
                         isActive: snapshot.hasTrack && snapshot.isPlaying,
-                        date: context.date,
                         barCount: barCount,
                         barSpacing: 2 * layoutScale
                     )
@@ -448,41 +447,73 @@ struct NowPlayingWidgetView: View {
 
 private struct EqualizerView: View {
     let isActive: Bool
-    let date: Date
     let barCount: Int
     let barSpacing: CGFloat
 
     var body: some View {
-        GeometryReader { proxy in
-            HStack(alignment: .center, spacing: barSpacing) {
-                ForEach(0..<barCount, id: \.self) { index in
-                    Capsule()
-                        .fill(.white.opacity(isActive ? 0.72 : 0.22))
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight: 2,
-                            maxHeight: barHeight(
-                                index: index,
-                                available: proxy.size.height
-                            )
-                        )
-                }
+        if isActive {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                equalizerCanvas(date: context.date, isActive: true)
             }
-            .frame(maxHeight: .infinity, alignment: .center)
+        } else {
+            equalizerCanvas(date: .distantPast, isActive: false)
         }
     }
 
-    private func barHeight(index: Int, available: CGFloat) -> CGFloat {
+    private func equalizerCanvas(date: Date, isActive: Bool) -> some View {
+        Canvas(opaque: false, rendersAsynchronously: true) { context, size in
+            guard barCount > 0, size.width > 0, size.height > 0 else {
+                return
+            }
+
+            let totalSpacing = barSpacing * CGFloat(max(barCount - 1, 0))
+            let barWidth = max(
+                (size.width - totalSpacing) / CGFloat(barCount),
+                1
+            )
+            let color = Color.white.opacity(isActive ? 0.72 : 0.22)
+
+            for index in 0..<barCount {
+                let height = barHeight(
+                    index: index,
+                    date: date,
+                    available: size.height,
+                    isActive: isActive
+                )
+                let rect = CGRect(
+                    x: CGFloat(index) * (barWidth + barSpacing),
+                    y: (size.height - height) / 2,
+                    width: barWidth,
+                    height: height
+                )
+                let path = Path(
+                    roundedRect: rect,
+                    cornerRadius: min(barWidth, height) / 2
+                )
+                context.fill(path, with: .color(color))
+            }
+        }
+    }
+
+    private func barHeight(
+        index: Int,
+        date: Date,
+        available: CGFloat,
+        isActive: Bool
+    ) -> CGFloat {
         guard isActive else {
             return max(
                 2,
                 available * CGFloat(0.15 + Double(index % 3) * 0.04)
             )
         }
-        let phase = date.timeIntervalSinceReferenceDate * 4.2
-            + Double(index) * 0.72
-        let secondary = sin(phase * 0.63 + Double(index) * 0.31)
-        let value = 0.24 + abs(sin(phase)) * 0.52 + abs(secondary) * 0.18
+
+        let time = date.timeIntervalSinceReferenceDate
+        let phase = time * 5.4 + Double(index) * 0.74
+        let primary = abs(sin(phase))
+        let secondary = abs(sin(time * 3.1 + Double(index) * 1.17))
+        let tertiary = abs(cos(time * 2.3 + Double(index) * 0.43))
+        let value = 0.16 + primary * 0.48 + secondary * 0.22 + tertiary * 0.10
         return max(3, available * CGFloat(min(value, 0.96)))
     }
 }

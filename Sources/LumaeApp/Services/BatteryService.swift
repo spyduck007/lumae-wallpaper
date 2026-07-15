@@ -62,16 +62,6 @@ final class BatteryService: ObservableObject {
                 self?.refresh()
             }
         )
-
-        observers.append(
-            notificationCenter.addObserver(
-                forName: NSApplication.didBecomeActiveNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.refresh()
-            }
-        )
     }
 
     deinit {
