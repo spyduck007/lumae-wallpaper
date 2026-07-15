@@ -776,6 +776,18 @@ extension AppModel {
         widgets.first { $0.kind == .digitalClock }
     }
 
+    var nowPlayingWidget: DesktopWidget? {
+        widgets.first { $0.kind == .nowPlaying }
+    }
+
+    func widget(id: UUID, for displayID: String?) -> DesktopWidget? {
+        if widgetDisplayMode == .mirrored {
+            return widgets.first { $0.id == id }
+        }
+        guard let displayID else { return nil }
+        return widgetsForDisplay(displayID).first { $0.id == id }
+    }
+
     func widgetDisplayEnabled(for displayID: String) -> Bool {
         guard let display = displayTopology.display(id: displayID) else { return true }
         return WidgetDisplayResolver.bestConfiguration(
@@ -829,9 +841,24 @@ extension AppModel {
 
     @discardableResult
     func addDigitalClockWidget(for displayID: String? = nil) -> UUID {
+        addWidget(kind: .digitalClock, for: displayID)
+    }
+
+    @discardableResult
+    func addNowPlayingWidget(for displayID: String? = nil) -> UUID {
+        addWidget(kind: .nowPlaying, for: displayID)
+    }
+
+    @discardableResult
+    func addWidget(
+        kind: DesktopWidgetKind,
+        for displayID: String? = nil
+    ) -> UUID {
         if widgetDisplayMode == .mirrored {
-            if let existing = digitalClockWidget { return existing.id }
-            let widget = DesktopWidget(kind: .digitalClock)
+            if let existing = widgets.first(where: { $0.kind == kind }) {
+                return existing.id
+            }
+            let widget = makeDefaultWidget(kind: kind)
             widgets.append(widget)
             scheduleConfigurationApply()
             return widget.id
@@ -846,7 +873,7 @@ extension AppModel {
                 for: targetID,
                 createIfMissing: true
               ) else {
-            let widget = DesktopWidget(kind: .digitalClock)
+            let widget = makeDefaultWidget(kind: kind)
             widgets.append(widget)
             scheduleConfigurationApply()
             return widget.id
@@ -854,17 +881,35 @@ extension AppModel {
 
         var configurations = widgetDisplayConfigurations
         if let existing = configurations[index].widgets.first(where: {
-            $0.kind == .digitalClock
+            $0.kind == kind
         }) {
             return existing.id
         }
 
-        let source = digitalClockWidget ?? DesktopWidget(kind: .digitalClock)
+        let source = widgets.first(where: { $0.kind == kind })
+            ?? makeDefaultWidget(kind: kind)
         let widget = source.duplicated()
         configurations[index].widgets.append(widget)
         widgetDisplayConfigurations = configurations
         scheduleConfigurationApply()
         return widget.id
+    }
+
+    private func makeDefaultWidget(kind: DesktopWidgetKind) -> DesktopWidget {
+        switch kind {
+        case .digitalClock:
+            return DesktopWidget(
+                kind: .digitalClock,
+                position: NormalizedWidgetPosition(x: 0.5, y: 0.18),
+                size: .medium
+            )
+        case .nowPlaying:
+            return DesktopWidget(
+                kind: .nowPlaying,
+                position: NormalizedWidgetPosition(x: 0.5, y: 0.78),
+                size: .medium
+            )
+        }
     }
 
     func removeWidget(id: UUID) {
@@ -902,6 +947,10 @@ extension AppModel {
 
     func setClockShowsBackground(_ enabled: Bool, id: UUID) {
         updateWidget(id: id) { $0.digitalClock.showsBackground = enabled }
+    }
+
+    func setNowPlayingShowsBackground(_ enabled: Bool, id: UUID) {
+        updateWidget(id: id) { $0.nowPlaying.showsBackground = enabled }
     }
 
     private func updateWidget(

@@ -2,6 +2,7 @@ import Foundation
 
 public enum DesktopWidgetKind: String, Codable, CaseIterable, Sendable {
     case digitalClock
+    case nowPlaying
 }
 
 public enum DesktopWidgetSize: String, Codable, CaseIterable, Sendable {
@@ -63,6 +64,15 @@ public struct DigitalClockWidgetSettings: Codable, Hashable, Sendable {
     }
 }
 
+
+public struct NowPlayingWidgetSettings: Codable, Hashable, Sendable {
+    public var showsBackground: Bool
+
+    public init(showsBackground: Bool = true) {
+        self.showsBackground = showsBackground
+    }
+}
+
 public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
     public var id: UUID
     public var kind: DesktopWidgetKind
@@ -70,6 +80,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
     public var position: NormalizedWidgetPosition
     public var size: DesktopWidgetSize
     public var digitalClock: DigitalClockWidgetSettings
+    public var nowPlaying: NowPlayingWidgetSettings
 
     public init(
         id: UUID = UUID(),
@@ -77,7 +88,8 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         isEnabled: Bool = true,
         position: NormalizedWidgetPosition = NormalizedWidgetPosition(),
         size: DesktopWidgetSize = .medium,
-        digitalClock: DigitalClockWidgetSettings = DigitalClockWidgetSettings()
+        digitalClock: DigitalClockWidgetSettings = DigitalClockWidgetSettings(),
+        nowPlaying: NowPlayingWidgetSettings = NowPlayingWidgetSettings()
     ) {
         self.id = id
         self.kind = kind
@@ -85,6 +97,51 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         self.position = position
         self.size = size
         self.digitalClock = digitalClock
+        self.nowPlaying = nowPlaying
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case isEnabled
+        case position
+        case size
+        case digitalClock
+        case nowPlaying
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decode(DesktopWidgetKind.self, forKey: .kind)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        position = try container.decodeIfPresent(
+            NormalizedWidgetPosition.self,
+            forKey: .position
+        ) ?? NormalizedWidgetPosition()
+        size = try container.decodeIfPresent(
+            DesktopWidgetSize.self,
+            forKey: .size
+        ) ?? .medium
+        digitalClock = try container.decodeIfPresent(
+            DigitalClockWidgetSettings.self,
+            forKey: .digitalClock
+        ) ?? DigitalClockWidgetSettings()
+        nowPlaying = try container.decodeIfPresent(
+            NowPlayingWidgetSettings.self,
+            forKey: .nowPlaying
+        ) ?? NowPlayingWidgetSettings()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encode(position, forKey: .position)
+        try container.encode(size, forKey: .size)
+        try container.encode(digitalClock, forKey: .digitalClock)
+        try container.encode(nowPlaying, forKey: .nowPlaying)
     }
 
     public func duplicated() -> DesktopWidget {

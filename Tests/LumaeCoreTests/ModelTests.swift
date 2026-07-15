@@ -73,4 +73,21 @@ final class ModelTests:XCTestCase {
   XCTAssertNil(result.verticalGuide)
   XCTAssertNil(result.horizontalGuide)
  }
+
+ func testNowPlayingWidgetPersistsAlongsideClock() throws {
+  let clock=DesktopWidget(kind:.digitalClock)
+  let nowPlaying=DesktopWidget(kind:.nowPlaying,position:NormalizedWidgetPosition(x:0.5,y:0.78),size:.large,nowPlaying:NowPlayingWidgetSettings(showsBackground:false))
+  let state=PersistedApplicationState(widgets:[clock,nowPlaying])
+  let decoded=try JSONDecoder().decode(PersistedApplicationState.self,from:JSONEncoder().encode(state))
+  XCTAssertEqual(decoded.widgets,[clock,nowPlaying])
+ }
+ func testOlderDesktopWidgetDecodesNowPlayingDefaults() throws {
+  let widget=DesktopWidget(kind:.digitalClock)
+  let encoded=try JSONEncoder().encode(widget)
+  var object=try XCTUnwrap(JSONSerialization.jsonObject(with:encoded) as? [String:Any])
+  object.removeValue(forKey:"nowPlaying")
+  let legacy=try JSONSerialization.data(withJSONObject:object)
+  let decoded=try JSONDecoder().decode(DesktopWidget.self,from:legacy)
+  XCTAssertTrue(decoded.nowPlaying.showsBackground)
+ }
 }
