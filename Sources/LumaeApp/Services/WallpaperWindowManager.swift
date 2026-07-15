@@ -6,6 +6,51 @@ import LumaeCore
 @MainActor
 final class WallpaperWindowManager {
     private var windows: [String: WallpaperWindow] = [:]
+    private var observers: [NSObjectProtocol] = []
+
+    init() {
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        observers.append(
+            workspaceCenter.addObserver(
+                forName: NSWorkspace.activeSpaceDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.restoreDesktopWindowOrder()
+                }
+            }
+        )
+        observers.append(
+            workspaceCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.restoreDesktopWindowOrder()
+                }
+            }
+        )
+        observers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.restoreDesktopWindowOrder()
+                }
+            }
+        )
+    }
+
+    deinit {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+    }
 
     func removeAll() {
         windows.values.forEach {
@@ -66,8 +111,25 @@ final class WallpaperWindowManager {
             widgets: widgets
         )
         window.setFrame(frame, display: true)
-        window.orderBack(nil)
+        window.orderFrontRegardless()
         windows[display.id] = window
+    }
+
+    private func restoreDesktopWindowOrder() {
+        guard !windows.isEmpty else { return }
+        orderWallpaperWindows()
+
+        // macOS may finish rebuilding the desktop stack after the workspace
+        // notification is delivered, especially on the built-in display.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.orderWallpaperWindows()
+        }
+    }
+
+    private func orderWallpaperWindows() {
+        for window in windows.values {
+            window.orderFrontRegardless()
+        }
     }
 }
 
@@ -79,13 +141,17 @@ final class WallpaperWindow: NSWindow {
             backing: .buffered,
             defer: false
         )
-        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
+        let desktopIconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
+        level = NSWindow.Level(rawValue: desktopIconLevel - 1)
         collectionBehavior = [
             .canJoinAllSpaces,
             .stationary,
             .ignoresCycle,
             .fullScreenAuxiliary
         ]
+        animationBehavior = .none
+        isExcludedFromWindowsMenu = true
+        sharingType = .none
         isOpaque = true
         hasShadow = false
         ignoresMouseEvents = true
