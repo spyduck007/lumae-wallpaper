@@ -7,6 +7,8 @@ import LumaeCore
 
 @MainActor
 final class WallpaperWindowManager {
+    var onSystemRevealGesture: (() -> Void)?
+
     private var windows: [String: WallpaperWindow] = [:]
     private var displayFrames: [String: NSRect] = [:]
     private var observers: [NSObjectProtocol] = []
@@ -48,6 +50,7 @@ final class WallpaperWindowManager {
             matching: [.swipe]
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
+                self?.onSystemRevealGesture?()
                 self?.scheduleRepairBurst(
                     delays: [0, 0.03, 0.08, 0.16, 0.28, 0.48, 0.78]
                 )
@@ -60,6 +63,7 @@ final class WallpaperWindowManager {
             matching: [.swipe]
         ) { [weak self] event in
             Task { @MainActor [weak self] in
+                self?.onSystemRevealGesture?()
                 self?.scheduleRepairBurst(
                     delays: [0, 0.03, 0.08, 0.16, 0.28, 0.48, 0.78]
                 )
@@ -159,6 +163,19 @@ final class WallpaperWindowManager {
                 continue
             }
             composite.updateWidgets(widgetsByDisplayID[displayID] ?? [])
+        }
+    }
+
+    func setPerformanceSuspended(
+        _ suspendedDisplayIDs: Set<String>
+    ) {
+        for (displayID, window) in windows {
+            guard let composite = window.contentView as? WallpaperCompositeView else {
+                continue
+            }
+            composite.setPerformanceSuspended(
+                suspendedDisplayIDs.contains(displayID)
+            )
         }
     }
 
@@ -308,6 +325,7 @@ final class WallpaperCompositeView: NSView {
     )
     private var widgetHosts: [UUID: DesktopWidgetHostingView] = [:]
     private var widgets: [DesktopWidget] = []
+    private var isPerformanceSuspended = false
     private var accessibilityObserver: NSObjectProtocol?
 
     override var isFlipped: Bool { true }
@@ -348,6 +366,16 @@ final class WallpaperCompositeView: NSView {
         }
     }
 
+    func setPerformanceSuspended(_ suspended: Bool) {
+        guard isPerformanceSuspended != suspended else { return }
+        isPerformanceSuspended = suspended
+        glassBackdrop.isHidden = suspended || glassBackdrop.maskImage == nil
+        contrastBackdrop.isHidden = suspended || contrastBackdrop.maskImage == nil
+        for host in widgetHosts.values {
+            host.isHidden = suspended
+        }
+    }
+
     func updateWidgets(_ widgets: [DesktopWidget]) {
         let enabledWidgets = widgets.filter(\.isEnabled)
         guard self.widgets != enabledWidgets else { return }
@@ -381,6 +409,7 @@ final class WallpaperCompositeView: NSView {
                 host.layer?.backgroundColor = NSColor.clear.cgColor
                 host.layer?.drawsAsynchronously = true
                 host.translatesAutoresizingMaskIntoConstraints = true
+                host.isHidden = isPerformanceSuspended
                 widgetHosts[widget.id] = host
                 createdHost = true
             }
@@ -458,6 +487,10 @@ final class WallpaperCompositeView: NSView {
 
         glassBackdrop.update(regions: glassRegions, canvasSize: bounds.size)
         contrastBackdrop.update(regions: contrastRegions, canvasSize: bounds.size)
+        if isPerformanceSuspended {
+            glassBackdrop.isHidden = true
+            contrastBackdrop.isHidden = true
+        }
         CATransaction.commit()
     }
 

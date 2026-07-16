@@ -192,8 +192,11 @@ private struct PlaybackSettingsPane: View {
 
                 SettingsToggleRow(
                     title: "Pause during full-screen apps",
-                    detail: "Avoid decoding video behind full-screen content.",
-                    isOn: $model.state.settings.pauseDuringFullScreenApps
+                    detail: "Freeze hidden wallpaper work and resume before the desktop is revealed.",
+                    isOn: Binding(
+                        get: { model.state.settings.pauseDuringFullScreenApps },
+                        set: { model.setPauseDuringFullScreenApps($0) }
+                    )
                 )
 
                 SettingsDivider()

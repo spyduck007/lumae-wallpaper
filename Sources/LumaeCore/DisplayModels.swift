@@ -163,3 +163,17 @@ public enum DisplayAssignmentRestorer {
         return result
     }
 }
+
+
+public enum PlaybackSuspensionPolicy {
+    public static func shouldPause(
+        sessionDisplayIDs: Set<String>,
+        coveredDisplayIDs: Set<String>,
+        manuallyPaused: Bool
+    ) -> Bool {
+        manuallyPaused || (
+            !sessionDisplayIDs.isEmpty
+                && sessionDisplayIDs.isSubset(of: coveredDisplayIDs)
+        )
+    }
+}

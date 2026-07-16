@@ -4,13 +4,27 @@ import LumaeCore
 
 @MainActor
 final class WallpaperEngine {
-    private let windows = WallpaperWindowManager()
+    private let windows: WallpaperWindowManager
+    private let fullScreenController: FullScreenPerformanceController
     private let imageCache = NSCache<NSString, NSImage>()
     private var videoSessions: [VideoPlaybackKey: VideoPlaybackSession] = [:]
     private var currentState: PersistedApplicationState?
+    private var coveredDisplayIDs: Set<String> = []
+    private var isManuallyPaused = false
 
     init() {
+        let windows = WallpaperWindowManager()
+        let fullScreenController = FullScreenPerformanceController()
+        self.windows = windows
+        self.fullScreenController = fullScreenController
         imageCache.countLimit = 8
+
+        windows.onSystemRevealGesture = { [weak fullScreenController] in
+            fullScreenController?.revealDesktopForSystemTransition()
+        }
+        fullScreenController.onCoveredDisplayIDsChange = { [weak self] displayIDs in
+            self?.applyCoveredDisplayIDs(displayIDs)
+        }
     }
 
     func apply(
@@ -39,6 +53,14 @@ final class WallpaperEngine {
         case .span:
             try applyShared(state: state, topology: topology, span: true)
         }
+
+        coveredDisplayIDs.formIntersection(topology.activeDisplayIDs)
+        windows.setPerformanceSuspended(coveredDisplayIDs)
+        fullScreenController.update(
+            enabled: state.settings.pauseDuringFullScreenApps,
+            topology: topology
+        )
+        applyPlaybackPolicy()
     }
 
     func restore(
@@ -72,11 +94,23 @@ final class WallpaperEngine {
     }
 
     func pause() {
-        videoSessions.values.forEach { $0.service.pause() }
+        isManuallyPaused = true
+        applyPlaybackPolicy()
     }
 
     func resume() {
-        videoSessions.values.forEach { $0.service.resume() }
+        isManuallyPaused = false
+        applyPlaybackPolicy()
+    }
+
+    func updateFullScreenSuspension(
+        enabled: Bool,
+        topology: DisplayTopology
+    ) {
+        fullScreenController.update(enabled: enabled, topology: topology)
+        if !enabled {
+            applyCoveredDisplayIDs([])
+        }
     }
 
     private func applyPerDisplay(
@@ -159,7 +193,8 @@ final class WallpaperEngine {
             let session = try videoSession(
                 path: wallpaper.effectiveFilePath,
                 muted: state.settings.audioBehavior == .muted,
-                maxFrameRate: state.settings.maximumFrameRate
+                maxFrameRate: state.settings.maximumFrameRate,
+                displayIDs: topology.activeDisplayIDs
             )
 
             for display in topology.displays {
@@ -177,7 +212,6 @@ final class WallpaperEngine {
                     )
                 )
             }
-            session.service.play()
 
         case .unsupported:
             throw EngineError.unsupported
@@ -212,7 +246,8 @@ final class WallpaperEngine {
             let session = try videoSession(
                 path: wallpaper.effectiveFilePath,
                 muted: audioBehavior == .muted,
-                maxFrameRate: maxFrameRate
+                maxFrameRate: maxFrameRate,
+                displayIDs: [display.id]
             )
             windows.showVideo(
                 player: session.player,
@@ -221,7 +256,6 @@ final class WallpaperEngine {
                 mode: scalingMode,
                 widgets: widgets
             )
-            session.service.play()
 
         case .unsupported:
             throw EngineError.unsupported
@@ -259,10 +293,12 @@ final class WallpaperEngine {
     private func videoSession(
         path: String,
         muted: Bool,
-        maxFrameRate: Int
+        maxFrameRate: Int,
+        displayIDs: Set<String>
     ) throws -> VideoPlaybackSession {
         let key = VideoPlaybackKey(path: path, muted: muted)
         if let existing = videoSessions[key] {
+            existing.displayIDs.formUnion(displayIDs)
             return existing
         }
         let service = SharedVideoPlaybackService()
@@ -271,9 +307,33 @@ final class WallpaperEngine {
             muted: muted,
             maxFrameRate: maxFrameRate
         )
-        let session = VideoPlaybackSession(service: service, player: player)
+        let session = VideoPlaybackSession(
+            service: service,
+            player: player,
+            displayIDs: displayIDs
+        )
         videoSessions[key] = session
         return session
+    }
+
+    private func applyCoveredDisplayIDs(_ displayIDs: Set<String>) {
+        coveredDisplayIDs = displayIDs
+        windows.setPerformanceSuspended(displayIDs)
+        applyPlaybackPolicy()
+    }
+
+    private func applyPlaybackPolicy() {
+        for session in videoSessions.values {
+            if PlaybackSuspensionPolicy.shouldPause(
+                sessionDisplayIDs: session.displayIDs,
+                coveredDisplayIDs: coveredDisplayIDs,
+                manuallyPaused: isManuallyPaused
+            ) {
+                session.service.pause()
+            } else {
+                session.service.resume()
+            }
+        }
     }
 
     private func stopAllPlayback() {
@@ -291,10 +351,16 @@ private struct VideoPlaybackKey: Hashable {
 private final class VideoPlaybackSession {
     let service: SharedVideoPlaybackService
     let player: AVQueuePlayer
+    var displayIDs: Set<String>
 
-    init(service: SharedVideoPlaybackService, player: AVQueuePlayer) {
+    init(
+        service: SharedVideoPlaybackService,
+        player: AVQueuePlayer,
+        displayIDs: Set<String>
+    ) {
         self.service = service
         self.player = player
+        self.displayIDs = displayIDs
     }
 }
 

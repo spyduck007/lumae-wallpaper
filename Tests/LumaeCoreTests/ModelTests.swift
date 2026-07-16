@@ -282,4 +282,19 @@ final class ModelTests:XCTestCase {
   )
   XCTAssertEqual(configuration.referencedWallpaperIDs,[shared,assigned,playlistID,current])
  }
+
+ func testPlaybackSuspensionPolicyForSharedSessions(){
+  XCTAssertTrue(PlaybackSuspensionPolicy.shouldPause(
+   sessionDisplayIDs:["main"],coveredDisplayIDs:["main"],manuallyPaused:false
+  ))
+  XCTAssertFalse(PlaybackSuspensionPolicy.shouldPause(
+   sessionDisplayIDs:["main","external"],coveredDisplayIDs:["main"],manuallyPaused:false
+  ))
+  XCTAssertTrue(PlaybackSuspensionPolicy.shouldPause(
+   sessionDisplayIDs:["main","external"],coveredDisplayIDs:["main","external"],manuallyPaused:false
+  ))
+  XCTAssertTrue(PlaybackSuspensionPolicy.shouldPause(
+   sessionDisplayIDs:["main","external"],coveredDisplayIDs:[],manuallyPaused:true
+  ))
+ }
 }

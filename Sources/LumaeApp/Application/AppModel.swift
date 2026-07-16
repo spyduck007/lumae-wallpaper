@@ -350,6 +350,16 @@ final class AppModel: ObservableObject {
         isPaused ? engine.pause() : engine.resume()
     }
 
+    func setPauseDuringFullScreenApps(_ enabled: Bool) {
+        guard state.settings.pauseDuringFullScreenApps != enabled else { return }
+        state.settings.pauseDuringFullScreenApps = enabled
+        engine.updateFullScreenSuspension(
+            enabled: enabled,
+            topology: displayTopology
+        )
+        persistSoon()
+    }
+
     func advancePlaylist() {
         advanceActivePlaylist(.next)
     }
