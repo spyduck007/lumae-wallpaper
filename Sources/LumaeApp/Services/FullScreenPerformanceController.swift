@@ -170,8 +170,11 @@ final class FullScreenPerformanceController {
                   layer.intValue == 0,
                   let alpha = info[kCGWindowAlpha as String] as? NSNumber,
                   alpha.doubleValue > 0.01,
-                  let boundsDictionary = info[kCGWindowBounds as String] as? CFDictionary,
-                  let windowBounds = CGRect(dictionaryRepresentation: boundsDictionary) else {
+                  let boundsDictionary = info[kCGWindowBounds as String]
+                    as? [String: Any],
+                  let windowBounds = CGRect(
+                    dictionaryRepresentation: boundsDictionary as CFDictionary
+                  ) else {
                 continue
             }
 
