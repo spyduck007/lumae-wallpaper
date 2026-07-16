@@ -4,16 +4,16 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Lumae</title>
         <item>
-            <title>0.6.0</title>
-            <pubDate>Wed, 15 Jul 2026 14:36:06 -0400</pubDate>
+            <title>0.6.1</title>
+            <pubDate>Thu, 16 Jul 2026 09:21:00 -0400</pubDate>
             <link>https://github.com/spyduck007/lumae-wallpaper</link>
-            <sparkle:version>16</sparkle:version>
-            <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
+            <sparkle:version>17</sparkle:version>
+            <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/spyduck007/lumae-wallpaper/releases/download/v0.6.0/Lumae-0.6.0.dmg" length="4443161" type="application/octet-stream" sparkle:edSignature="ejl9jq58VbXHaoTdWHcWwes1uoUAp1caIA8L+k+LfmhuMfSWtpZYFujjwD62z4sdOIbfJ+JxQ3VO5q5g1/jnDg=="></enclosure>
+            <enclosure url="https://github.com/spyduck007/lumae-wallpaper/releases/download/v0.6.1/Lumae-0.6.1.dmg" length="4463777" type="application/octet-stream" sparkle:edSignature="rakB4Q0WM3LkhtXcaQp0NSHvGLgzwUjMs2piwAClJNVXv9p0SL2ECEZi/l/SNsOPSCUGIX+UJQV7FgvclO0KBw=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: NHD709kFG3n4UKBIg96HWUlqIslWY3WJ2CQkfgNGiqCyFeDDRP2zFI1vtF6CHkJulttV1mXu0nIZBC2RbNbYCQ==
+edSignature: yoydr5oNjvdnupct3vAqwtheFQceRwoCsbae5wKpdt3Qeyr1u5FYNyyyTpHvuk91hktUXhKE86TzkFig7aKqDQ==
 length: 1116
 -->
