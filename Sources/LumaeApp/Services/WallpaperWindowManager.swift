@@ -8,35 +8,74 @@ import LumaeCore
 @MainActor
 final class WallpaperWindowManager {
     private var windows: [String: WallpaperWindow] = [:]
+    private var displayFrames: [String: NSRect] = [:]
     private var observers: [NSObjectProtocol] = []
+    private var windowObservers: [ObjectIdentifier: [NSObjectProtocol]] = [:]
+    private var eventMonitors: [Any] = []
+    private var repairWorkItems: [DispatchWorkItem] = []
 
     init() {
         let workspaceCenter = NSWorkspace.shared.notificationCenter
-        observers.append(
-            workspaceCenter.addObserver(
-                forName: NSWorkspace.activeSpaceDidChangeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in
-                    self?.restoreDesktopWindowOrder()
-                }
-            }
+        let notificationCenter = NotificationCenter.default
+
+        observe(
+            center: workspaceCenter,
+            name: NSWorkspace.activeSpaceDidChangeNotification,
+            delays: [0, 0.04, 0.10, 0.20, 0.38, 0.70, 1.10]
         )
-        observers.append(
-            workspaceCenter.addObserver(
-                forName: NSWorkspace.didWakeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in
-                    self?.restoreDesktopWindowOrder()
-                }
-            }
+        observe(
+            center: workspaceCenter,
+            name: NSWorkspace.didWakeNotification,
+            delays: [0, 0.08, 0.25, 0.60, 1.20]
         )
+        observe(
+            center: workspaceCenter,
+            name: NSWorkspace.sessionDidBecomeActiveNotification,
+            delays: [0, 0.08, 0.25, 0.60]
+        )
+        observe(
+            center: notificationCenter,
+            name: NSApplication.didBecomeActiveNotification,
+            delays: [0, 0.08, 0.22]
+        )
+        observe(
+            center: notificationCenter,
+            name: NSApplication.didChangeScreenParametersNotification,
+            delays: [0, 0.08, 0.25, 0.60]
+        )
+
+        if let monitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.swipe]
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scheduleRepairBurst(
+                    delays: [0, 0.03, 0.08, 0.16, 0.28, 0.48, 0.78]
+                )
+            }
+        } {
+            eventMonitors.append(monitor)
+        }
+
+        if let monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.swipe]
+        ) { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.scheduleRepairBurst(
+                    delays: [0, 0.03, 0.08, 0.16, 0.28, 0.48, 0.78]
+                )
+            }
+            return event
+        } {
+            eventMonitors.append(monitor)
+        }
     }
 
     deinit {
+        repairWorkItems.forEach { $0.cancel() }
+        eventMonitors.forEach(NSEvent.removeMonitor)
+        windowObservers.values.flatMap { $0 }.forEach {
+            NotificationCenter.default.removeObserver($0)
+        }
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
@@ -44,11 +83,17 @@ final class WallpaperWindowManager {
     }
 
     func removeAll() {
+        cancelRepairTasks()
+        windowObservers.values.flatMap { $0 }.forEach {
+            NotificationCenter.default.removeObserver($0)
+        }
+        windowObservers.removeAll()
         windows.values.forEach {
             $0.orderOut(nil)
             $0.contentView = nil
         }
         windows.removeAll()
+        displayFrames.removeAll()
     }
 
     func showStatic(
@@ -101,9 +146,11 @@ final class WallpaperWindowManager {
             wallpaperView: view,
             widgets: widgets
         )
-        window.setFrame(frame, display: true)
-        window.orderFrontRegardless()
+        displayFrames[display.id] = frame
         windows[display.id] = window
+        observeWindow(window)
+        repairWindow(window, expectedFrame: frame, forceOrder: true)
+        scheduleRepairBurst(delays: [0.03, 0.12, 0.30])
     }
 
     func updateWidgets(_ widgetsByDisplayID: [String: [DesktopWidget]]) {
@@ -115,25 +162,103 @@ final class WallpaperWindowManager {
         }
     }
 
-    private func restoreDesktopWindowOrder() {
-        guard !windows.isEmpty else { return }
-        orderWallpaperWindows()
+    private func observeWindow(_ window: WallpaperWindow) {
+        let center = NotificationCenter.default
+        let tokens = [
+            NSWindow.didChangeOcclusionStateNotification,
+            NSWindow.didChangeScreenNotification,
+            NSWindow.didResizeNotification
+        ].map { name in
+            center.addObserver(
+                forName: name,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.scheduleRepairBurst(
+                        delays: [0, 0.04, 0.12, 0.28]
+                    )
+                }
+            }
+        }
+        windowObservers[ObjectIdentifier(window)] = tokens
+    }
 
-        // macOS may finish rebuilding the desktop stack after the workspace
-        // notification is delivered, especially on the built-in display.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.orderWallpaperWindows()
+    private func observe(
+        center: NotificationCenter,
+        name: Notification.Name,
+        delays: [TimeInterval]
+    ) {
+        observers.append(
+            center.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.scheduleRepairBurst(delays: delays)
+                }
+            }
+        )
+    }
+
+    private func scheduleRepairBurst(delays: [TimeInterval]) {
+        guard !windows.isEmpty else { return }
+        cancelRepairTasks()
+        repairWindows(forceOrder: true)
+
+        repairWorkItems = delays.filter { $0 > 0 }.map { delay in
+            let workItem = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.repairWindows(forceOrder: true)
+                }
+            }
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + delay,
+                execute: workItem
+            )
+            return workItem
         }
     }
 
-    private func orderWallpaperWindows() {
-        for window in windows.values {
+    private func cancelRepairTasks() {
+        repairWorkItems.forEach { $0.cancel() }
+        repairWorkItems.removeAll()
+    }
+
+    private func repairWindows(forceOrder: Bool) {
+        for (displayID, window) in windows {
+            let expectedFrame = displayFrames[displayID] ?? window.frame
+            repairWindow(
+                window,
+                expectedFrame: expectedFrame,
+                forceOrder: forceOrder
+            )
+        }
+    }
+
+    private func repairWindow(
+        _ window: WallpaperWindow,
+        expectedFrame: NSRect,
+        forceOrder: Bool
+    ) {
+        window.enforceWallpaperBehavior()
+
+        if window.frame != expectedFrame {
+            window.setFrame(expectedFrame, display: true, animate: false)
+            window.contentView?.needsLayout = true
+        }
+        if !window.isVisible || forceOrder {
             window.orderFrontRegardless()
         }
     }
 }
 
 final class WallpaperWindow: NSWindow {
+    private static let wallpaperLevel = NSWindow.Level(
+        rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) - 1
+    )
+
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
@@ -141,8 +266,11 @@ final class WallpaperWindow: NSWindow {
             backing: .buffered,
             defer: false
         )
-        let desktopIconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
-        level = NSWindow.Level(rawValue: desktopIconLevel - 1)
+        enforceWallpaperBehavior()
+    }
+
+    func enforceWallpaperBehavior() {
+        level = Self.wallpaperLevel
         collectionBehavior = [
             .canJoinAllSpaces,
             .stationary,
@@ -151,15 +279,19 @@ final class WallpaperWindow: NSWindow {
         ]
         animationBehavior = .none
         isExcludedFromWindowsMenu = true
-        sharingType = .none
+        sharingType = .readOnly
         isOpaque = true
         hasShadow = false
         ignoresMouseEvents = true
         backgroundColor = .black
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
+        canHide = false
+        isMovable = false
+        isMovableByWindowBackground = false
     }
 
+    override var worksWhenModal: Bool { true }
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
