@@ -15,6 +15,7 @@ final class WallpaperWindowManager {
     private var windowObservers: [ObjectIdentifier: [NSObjectProtocol]] = [:]
     private var eventMonitors: [Any] = []
     private var repairWorkItems: [DispatchWorkItem] = []
+    private var replacementSnapshot: ReplacementSnapshot?
 
     init() {
         let workspaceCenter = NSWorkspace.shared.notificationCenter
@@ -86,18 +87,54 @@ final class WallpaperWindowManager {
         }
     }
 
+    func beginReplacement() {
+        guard replacementSnapshot == nil else { return }
+        cancelRepairTasks()
+        replacementSnapshot = ReplacementSnapshot(
+            windows: windows,
+            displayFrames: displayFrames,
+            windowObservers: windowObservers
+        )
+        windows = [:]
+        displayFrames = [:]
+        windowObservers = [:]
+    }
+
+    func commitReplacement() {
+        guard let snapshot = replacementSnapshot else { return }
+        replacementSnapshot = nil
+
+        repairWindows(forceOrder: true)
+        let workItem = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.retire(snapshot)
+            }
+        }
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + 0.08,
+            execute: workItem
+        )
+        scheduleRepairBurst(delays: [0.02, 0.10, 0.24])
+    }
+
+    func rollbackReplacement() {
+        guard let snapshot = replacementSnapshot else { return }
+        replacementSnapshot = nil
+        retireCurrentWindows()
+        windows = snapshot.windows
+        displayFrames = snapshot.displayFrames
+        windowObservers = snapshot.windowObservers
+        repairWindows(forceOrder: true)
+        scheduleRepairBurst(delays: [0.03, 0.12, 0.30])
+    }
+
     func removeAll() {
         cancelRepairTasks()
-        windowObservers.values.flatMap { $0 }.forEach {
-            NotificationCenter.default.removeObserver($0)
+        if let snapshot = replacementSnapshot {
+            retire(snapshot)
+            replacementSnapshot = nil
         }
-        windowObservers.removeAll()
-        windows.values.forEach {
-            $0.orderOut(nil)
-            $0.contentView = nil
-        }
-        windows.removeAll()
-        displayFrames.removeAll()
+        retireCurrentWindows()
     }
 
     func showStatic(
@@ -176,6 +213,28 @@ final class WallpaperWindowManager {
             composite.setPerformanceSuspended(
                 suspendedDisplayIDs.contains(displayID)
             )
+        }
+    }
+
+    private func retireCurrentWindows() {
+        let snapshot = ReplacementSnapshot(
+            windows: windows,
+            displayFrames: displayFrames,
+            windowObservers: windowObservers
+        )
+        windows = [:]
+        displayFrames = [:]
+        windowObservers = [:]
+        retire(snapshot)
+    }
+
+    private func retire(_ snapshot: ReplacementSnapshot) {
+        snapshot.windowObservers.values.flatMap { $0 }.forEach {
+            NotificationCenter.default.removeObserver($0)
+        }
+        snapshot.windows.values.forEach {
+            $0.orderOut(nil)
+            $0.contentView = nil
         }
     }
 
@@ -269,6 +328,12 @@ final class WallpaperWindowManager {
             window.orderFrontRegardless()
         }
     }
+}
+
+private struct ReplacementSnapshot {
+    var windows: [String: WallpaperWindow]
+    var displayFrames: [String: NSRect]
+    var windowObservers: [ObjectIdentifier: [NSObjectProtocol]]
 }
 
 final class WallpaperWindow: NSWindow {

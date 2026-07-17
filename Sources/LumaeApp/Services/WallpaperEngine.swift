@@ -11,6 +11,7 @@ final class WallpaperEngine {
     private var currentState: PersistedApplicationState?
     private var coveredDisplayIDs: Set<String> = []
     private var isManuallyPaused = false
+    private var playbackRetirementTasks: [Task<Void, Never>] = []
 
     init() {
         let windows = WallpaperWindowManager()
@@ -39,28 +40,47 @@ final class WallpaperEngine {
         state: PersistedApplicationState,
         topology: DisplayTopology
     ) async throws {
-        currentState = state
-        stopAllPlayback()
-        windows.removeAll()
-
-        guard !topology.displays.isEmpty else { return }
-
-        switch state.settings.presentationMode {
-        case .perDisplay:
-            try applyPerDisplay(state: state, topology: topology)
-        case .duplicate:
-            try applyShared(state: state, topology: topology, span: false)
-        case .span:
-            try applyShared(state: state, topology: topology, span: true)
+        guard !topology.displays.isEmpty else {
+            currentState = state
+            stopAllPlayback()
+            windows.removeAll()
+            fullScreenController.update(enabled: false, topology: topology)
+            return
         }
 
-        coveredDisplayIDs.formIntersection(topology.activeDisplayIDs)
-        windows.setPerformanceSuspended(coveredDisplayIDs)
-        fullScreenController.update(
-            enabled: state.settings.pauseDuringFullScreenApps,
-            topology: topology
-        )
-        applyPlaybackPolicy()
+        let previousState = currentState
+        let previousSessions = videoSessions
+        currentState = state
+        videoSessions = [:]
+        windows.beginReplacement()
+
+        do {
+            switch state.settings.presentationMode {
+            case .perDisplay:
+                try applyPerDisplay(state: state, topology: topology)
+            case .duplicate:
+                try applyShared(state: state, topology: topology, span: false)
+            case .span:
+                try applyShared(state: state, topology: topology, span: true)
+            }
+
+            coveredDisplayIDs.formIntersection(topology.activeDisplayIDs)
+            windows.setPerformanceSuspended(coveredDisplayIDs)
+            fullScreenController.update(
+                enabled: state.settings.pauseDuringFullScreenApps,
+                topology: topology
+            )
+            applyPlaybackPolicy()
+            windows.commitReplacement()
+            retirePlaybackSessions(previousSessions)
+        } catch {
+            stopPlaybackSessions(videoSessions)
+            videoSessions = previousSessions
+            currentState = previousState
+            windows.rollbackReplacement()
+            applyPlaybackPolicy()
+            throw error
+        }
     }
 
     func restore(
@@ -336,8 +356,35 @@ final class WallpaperEngine {
         }
     }
 
+    private func retirePlaybackSessions(
+        _ sessions: [VideoPlaybackKey: VideoPlaybackSession]
+    ) {
+        guard !sessions.isEmpty else { return }
+        let task = Task { [sessions] in
+            try? await Task.sleep(for: .milliseconds(140))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self.stopPlaybackSessions(sessions)
+            }
+        }
+        playbackRetirementTasks.append(task)
+        if playbackRetirementTasks.count > 8 {
+            playbackRetirementTasks.removeFirst(
+                playbackRetirementTasks.count - 8
+            )
+        }
+    }
+
+    private func stopPlaybackSessions(
+        _ sessions: [VideoPlaybackKey: VideoPlaybackSession]
+    ) {
+        sessions.values.forEach { $0.service.stop() }
+    }
+
     private func stopAllPlayback() {
-        videoSessions.values.forEach { $0.service.stop() }
+        playbackRetirementTasks.forEach { $0.cancel() }
+        playbackRetirementTasks.removeAll()
+        stopPlaybackSessions(videoSessions)
         videoSessions.removeAll()
     }
 }
