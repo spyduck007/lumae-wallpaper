@@ -156,6 +156,7 @@ final class WallpaperEngine {
                 scalingMode: assignment.scalingMode,
                 maxFrameRate: assignment.maxFrameRate
                     ?? state.settings.maximumFrameRate,
+                videoQuality: state.settings.videoQuality,
                 audioBehavior: state.settings.audioBehavior,
                 widgets: resolvedWidgets(
                     for: display,
@@ -210,8 +211,14 @@ final class WallpaperEngine {
             }
 
         case .video:
+            let playbackURL = optimizedPlaybackURL(
+                for: wallpaper,
+                quality: state.settings.videoQuality,
+                maximumFrameRate: state.settings.maximumFrameRate,
+                displayPixelSizes: topology.displays.map(\.pixelSize)
+            )
             let session = try videoSession(
-                path: wallpaper.effectiveFilePath,
+                path: playbackURL.path,
                 muted: state.settings.audioBehavior == .muted,
                 maxFrameRate: state.settings.maximumFrameRate,
                 displayIDs: topology.activeDisplayIDs
@@ -243,6 +250,7 @@ final class WallpaperEngine {
         on display: DisplayDescriptor,
         scalingMode: WallpaperScalingMode,
         maxFrameRate: Int,
+        videoQuality: VideoQuality,
         audioBehavior: AudioBehavior,
         widgets: [DesktopWidget]
     ) throws {
@@ -263,8 +271,14 @@ final class WallpaperEngine {
             )
 
         case .video:
+            let playbackURL = optimizedPlaybackURL(
+                for: wallpaper,
+                quality: videoQuality,
+                maximumFrameRate: maxFrameRate,
+                displayPixelSizes: [display.pixelSize]
+            )
             let session = try videoSession(
-                path: wallpaper.effectiveFilePath,
+                path: playbackURL.path,
                 muted: audioBehavior == .muted,
                 maxFrameRate: maxFrameRate,
                 displayIDs: [display.id]
@@ -296,6 +310,26 @@ final class WallpaperEngine {
                 display.id
             ])
         )
+    }
+
+    private func optimizedPlaybackURL(
+        for wallpaper: WallpaperMetadata,
+        quality: VideoQuality,
+        maximumFrameRate: Int,
+        displayPixelSizes: [LSize]
+    ) -> URL {
+        guard let profile = VideoOptimizationPlanner.profile(
+            for: wallpaper,
+            quality: quality,
+            maximumFrameRate: maximumFrameRate,
+            displayPixelSizes: displayPixelSizes
+        ), let optimized = VideoOptimizationService.existingURL(
+            for: wallpaper,
+            profile: profile
+        ) else {
+            return URL(fileURLWithPath: wallpaper.effectiveFilePath)
+        }
+        return optimized
     }
 
     private func cachedImage(at path: String) throws -> NSImage {

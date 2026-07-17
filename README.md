@@ -15,6 +15,7 @@
 - Extensible desktop widget canvas with Clock, Now Playing, Date/Calendar, and Battery widgets; native backdrop glass, distinct Clear/Contrast/None styles, artwork tint, global style defaults, in-place widget refreshes, isolated widget layers, shared masked blur, pooled multi-display video decoding, snapping, custom sizing, layering, undo/redo, and mirrored or per-display layouts.
 - Scenes save and instantly restore complete desktop environments—including display assignments, presentation mode, playlists, rotation behavior, widgets, styles, and monitor-specific layouts—without duplicating wallpaper files.
 - Independent playback sessions for different per-display videos, plus a shared `AVQueuePlayer` + `AVPlayerLooper` timeline for synchronized duplicate/span playback and one `AVPlayerLayer` per display crop.
+- Automatic optimized video copies make Playback Quality and Maximum Frame Rate real: demanding originals continue playing while Lumae prepares reusable HEVC cache assets, then transition atomically without modifying the source file or Scene data.
 - Fill, Fit, Stretch and Center geometry; negative desktop coordinates, vertical offsets, rotated-size topology and mixed backing scales are represented in the portable core.
 - Non-focusable AppKit wallpaper windows, a crisp custom menu-bar control, close-to-menu-bar lifecycle, settings window, keyboard shortcuts, light/dark appearance and VoiceOver labels.
 - No accounts, telemetry, ads, analytics, StoreKit, paid APIs, uploaded media or network requests.
@@ -46,7 +47,9 @@ Lumae creates one borderless, mouse-ignoring, non-key `NSWindow` per active disp
 
 A video assignment creates one `AVQueuePlayer` and one `AVPlayerLooper`. All display layers reference that same player, so they share decode, clock, queue transition and loop boundary. Lumae does not seek independent players or recreate windows on every loop. `AVPlayerLooper` prequeues the template item, avoiding the normal end-of-item black frame. Hardware decode is selected by AVFoundation when supported by the codec and hardware.
 
-Independent per-display videos use separate playback sessions so each monitor can show different content and scaling. Synchronized duplicate and span modes intentionally share one session. Changing presentation or assignments tears down old loopers, removes items, and releases layers/windows to prevent hidden-player accumulation.
+Independent per-display videos use separate playback sessions so each monitor can show different content and scaling. Synchronized duplicate and span modes intentionally share one session. Changing presentation or assignments uses an atomic window handoff so the previous wallpaper stays visible until replacement surfaces are ready. Superseded loopers and layers are then retired after the compositor accepts the new configuration.
+
+When the selected quality or frame-rate policy would reduce decode work, Lumae creates a reusable HEVC playback copy in its cache. The original file remains untouched and remains the fallback for higher-quality settings or any export failure. Existing libraries and Scenes require no migration because optimized media is derived cache data rather than persisted wallpaper identity.
 
 ### Span-mode calculations
 

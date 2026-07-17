@@ -14,12 +14,14 @@ final class AppModel: ObservableObject {
     @Published var isLoading = false
     @Published var isPaused = false
     @Published private(set) var displayTopology = DisplayTopology(displays: [])
+    @Published private(set) var videoOptimizationStates: [UUID: VideoOptimizationState] = [:]
 
     let store = JSONStateStore()
     let importer = WallpaperImporter()
     let displayService = DisplayDiscoveryService()
     let engine = WallpaperEngine()
     let cache = ThumbnailCache()
+    let videoOptimizer = VideoOptimizationService()
     let launchAtLogin = LaunchAtLoginService()
 
     private var configurationApplyTask: Task<Void, Never>?
@@ -27,6 +29,7 @@ final class AppModel: ObservableObject {
     private var playlistRotationTask: Task<Void, Never>?
     private var widgetUndoStack: [WidgetHistoryEntry] = []
     private var widgetRedoStack: [WidgetHistoryEntry] = []
+    private var videoOptimizationTasks: [String: Task<Void, Never>] = [:]
 
     var filteredWallpapers: [WallpaperMetadata] {
         let filter = LibraryFilter(query: searchText)
@@ -66,6 +69,7 @@ final class AppModel: ObservableObject {
                 )
                 self.schedulePlaylistRotation()
             }
+            self.prepareOptimizedVideosForCurrentConfiguration()
         }
     }
 
@@ -123,6 +127,9 @@ final class AppModel: ObservableObject {
     }
 
     func remove(_ wallpaper: WallpaperMetadata) {
+        cancelOptimizations(for: wallpaper)
+        Task { try? await videoOptimizer.removeOptimizedCopies(for: wallpaper) }
+        videoOptimizationStates[wallpaper.id] = nil
         state.wallpapers.removeAll { $0.id == wallpaper.id }
         if selectedWallpaperID == wallpaper.id {
             selectedWallpaperID = nil
@@ -178,6 +185,8 @@ final class AppModel: ObservableObject {
         defer { isLoading = false }
 
         do {
+            cancelOptimizations(for: wallpaper)
+            try? await videoOptimizer.removeOptimizedCopies(for: wallpaper)
             let updated = try await importer.relink(
                 wallpaper,
                 to: url,
@@ -194,6 +203,7 @@ final class AppModel: ObservableObject {
                 state: state,
                 topology: displayTopology
             )
+            prepareOptimizedVideosForCurrentConfiguration()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -260,6 +270,7 @@ final class AppModel: ObservableObject {
                 state.wallpapers[index].dateLastUsed = Date()
             }
             try await save()
+            prepareOptimizedVideosForCurrentConfiguration()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -291,6 +302,20 @@ final class AppModel: ObservableObject {
     func setDefaultScalingMode(_ mode: WallpaperScalingMode) {
         guard state.settings.defaultScalingMode != mode else { return }
         state.settings.defaultScalingMode = mode
+        scheduleConfigurationApply()
+    }
+
+    func setVideoQuality(_ quality: VideoQuality) {
+        guard state.settings.videoQuality != quality else { return }
+        state.settings.videoQuality = quality
+        videoOptimizationStates.removeAll()
+        scheduleConfigurationApply()
+    }
+
+    func setMaximumFrameRate(_ frameRate: Int) {
+        guard state.settings.maximumFrameRate != frameRate else { return }
+        state.settings.maximumFrameRate = frameRate
+        videoOptimizationStates.removeAll()
         scheduleConfigurationApply()
     }
 
@@ -377,6 +402,7 @@ final class AppModel: ObservableObject {
         }
 
         await engine.topologyDidChange(topology, state: state)
+        prepareOptimizedVideosForCurrentConfiguration()
         persistSoon()
     }
 
@@ -440,6 +466,7 @@ final class AppModel: ObservableObject {
                 state: state,
                 topology: displayTopology
             )
+            prepareOptimizedVideosForCurrentConfiguration()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -459,6 +486,211 @@ final class AppModel: ObservableObject {
             } catch {
                 self.errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    func canOptimizeVideo(_ wallpaper: WallpaperMetadata) -> Bool {
+        !wallpaper.isMissing && optimizationProfile(for: wallpaper) != nil
+    }
+
+    func videoOptimizationState(
+        for wallpaper: WallpaperMetadata
+    ) -> VideoOptimizationState {
+        let desiredProfile = optimizationProfile(for: wallpaper)
+        if let state = videoOptimizationStates[wallpaper.id] {
+            switch state {
+            case let .available(profile, _) where profile == desiredProfile:
+                return state
+            case let .preparing(profile, _) where profile == desiredProfile:
+                return state
+            case .failed where desiredProfile != nil:
+                return state
+            case .original where desiredProfile == nil:
+                return state
+            default:
+                break
+            }
+        }
+        guard let profile = desiredProfile else {
+            return .original
+        }
+        if let size = VideoOptimizationService.cachedSize(
+            for: wallpaper,
+            profile: profile
+        ) {
+            return .available(profile, size)
+        }
+        return .original
+    }
+
+    func optimizeVideo(_ wallpaper: WallpaperMetadata) {
+        guard let profile = optimizationProfile(for: wallpaper) else { return }
+        scheduleOptimization(
+            VideoOptimizationRequest(wallpaper: wallpaper, profile: profile),
+            switchWhenReady: true
+        )
+    }
+
+    func removeOptimizedVideo(_ wallpaper: WallpaperMetadata) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.videoOptimizer.removeOptimizedCopies(for: wallpaper)
+                self.videoOptimizationStates[wallpaper.id] = .original
+                if self.isWallpaperActive(wallpaper.id) {
+                    try await self.engine.applyConfiguration(
+                        state: self.state,
+                        topology: self.displayTopology
+                    )
+                }
+            } catch {
+                self.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func cancelOptimizations(for wallpaper: WallpaperMetadata) {
+        let prefix = "\(wallpaper.contentHash)-"
+        for key in videoOptimizationTasks.keys where key.hasPrefix(prefix) {
+            videoOptimizationTasks[key]?.cancel()
+            videoOptimizationTasks[key] = nil
+        }
+    }
+
+    private func prepareOptimizedVideosForCurrentConfiguration() {
+        for request in currentVideoOptimizationRequests() {
+            scheduleOptimization(request, switchWhenReady: true)
+        }
+    }
+
+    private func scheduleOptimization(
+        _ request: VideoOptimizationRequest,
+        switchWhenReady: Bool
+    ) {
+        let key = "\(request.wallpaper.contentHash)-\(request.profile.cacheKey)"
+        if VideoOptimizationService.existingURL(
+            for: request.wallpaper,
+            profile: request.profile
+        ) != nil {
+            let size = VideoOptimizationService.cachedSize(
+                for: request.wallpaper,
+                profile: request.profile
+            ) ?? 0
+            videoOptimizationStates[request.wallpaper.id] = .available(
+                request.profile,
+                size
+            )
+            return
+        }
+        guard videoOptimizationTasks[key] == nil else { return }
+
+        videoOptimizationStates[request.wallpaper.id] = .preparing(
+            request.profile,
+            0
+        )
+        videoOptimizationTasks[key] = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let url = try await self.videoOptimizer.optimize(
+                    request: request
+                ) { [weak self] progress in
+                    Task { @MainActor [weak self] in
+                        self?.videoOptimizationStates[request.wallpaper.id]
+                            = .preparing(request.profile, progress)
+                    }
+                }
+                let size = Int64(
+                    (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+                        ?? 0
+                )
+                self.videoOptimizationStates[request.wallpaper.id] = .available(
+                    request.profile,
+                    size
+                )
+                self.videoOptimizationTasks[key] = nil
+                if switchWhenReady,
+                   self.isWallpaperActive(request.wallpaper.id),
+                   self.currentVideoOptimizationRequests().contains(request) {
+                    try await self.engine.applyConfiguration(
+                        state: self.state,
+                        topology: self.displayTopology
+                    )
+                }
+            } catch is CancellationError {
+                self.videoOptimizationTasks[key] = nil
+            } catch {
+                self.videoOptimizationTasks[key] = nil
+                self.videoOptimizationStates[request.wallpaper.id] = .failed(
+                    error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func optimizationProfile(
+        for wallpaper: WallpaperMetadata
+    ) -> VideoOptimizationProfile? {
+        VideoOptimizationPlanner.profile(
+            for: wallpaper,
+            quality: state.settings.videoQuality,
+            maximumFrameRate: state.settings.maximumFrameRate,
+            displayPixelSizes: displayTopology.displays.map(\.pixelSize)
+        )
+    }
+
+    private func currentVideoOptimizationRequests() -> Set<VideoOptimizationRequest> {
+        var requests: Set<VideoOptimizationRequest> = []
+        switch state.settings.presentationMode {
+        case .duplicate, .span:
+            if let wallpaper = wallpaper(id: state.sharedWallpaperID),
+               !wallpaper.isMissing,
+               let profile = optimizationProfile(for: wallpaper) {
+                requests.insert(
+                    VideoOptimizationRequest(
+                        wallpaper: wallpaper,
+                        profile: profile
+                    )
+                )
+            }
+        case .perDisplay:
+            let restored = DisplayAssignmentRestorer.restore(
+                saved: state.assignments,
+                onto: displayTopology
+            )
+            for display in displayTopology.displays {
+                guard let assignment = restored[display.id],
+                      assignment.enabled,
+                      let wallpaper = wallpaper(id: assignment.wallpaperID),
+                      !wallpaper.isMissing,
+                      let profile = VideoOptimizationPlanner.profile(
+                        for: wallpaper,
+                        quality: state.settings.videoQuality,
+                        maximumFrameRate: assignment.maxFrameRate
+                            ?? state.settings.maximumFrameRate,
+                        displayPixelSizes: [display.pixelSize]
+                      ) else {
+                    continue
+                }
+                requests.insert(
+                    VideoOptimizationRequest(
+                        wallpaper: wallpaper,
+                        profile: profile
+                    )
+                )
+            }
+        }
+        return requests
+    }
+
+    private func isWallpaperActive(_ wallpaperID: UUID) -> Bool {
+        if state.settings.presentationMode != .perDisplay {
+            return state.sharedWallpaperID == wallpaperID
+        }
+        let activeIDs = displayTopology.activeDisplayIDs
+        return state.assignments.contains {
+            activeIDs.contains($0.id)
+                && $0.enabled
+                && $0.wallpaperID == wallpaperID
         }
     }
 
@@ -1563,6 +1795,7 @@ extension AppModel {
             if persist {
                 try await save()
             }
+            prepareOptimizedVideosForCurrentConfiguration()
             schedulePlaylistRotation()
         } catch {
             state = previousState

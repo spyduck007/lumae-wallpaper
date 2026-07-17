@@ -20,6 +20,9 @@ struct WallpaperInspectorView: View {
                 preview
                 primaryActions
                 metadataSection
+                if wallpaper.kind == .video {
+                    optimizationSection
+                }
                 fileSection
                 destructiveSection
             }
@@ -231,6 +234,87 @@ struct WallpaperInspectorView: View {
         }
     }
 
+    private var optimizationSection: some View {
+        InspectorSection(title: "Playback") {
+            switch model.videoOptimizationState(for: wallpaper) {
+            case .original:
+                Label(
+                    "Original media",
+                    systemImage: "film"
+                )
+                .font(.callout.weight(.medium))
+
+                Text(
+                    "Lumae prepares a smaller playback copy automatically when the selected quality or frame-rate limit would reduce decoding work."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                if model.canOptimizeVideo(wallpaper) {
+                    Button {
+                        model.optimizeVideo(wallpaper)
+                    } label: {
+                        Label("Optimize Now", systemImage: "wand.and.stars")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+
+            case let .preparing(profile, progress):
+                HStack {
+                    Label("Preparing optimized copy", systemImage: "gearshape.2")
+                        .font(.callout.weight(.medium))
+                    Spacer()
+                    Text("\(Int((progress * 100).rounded()))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                ProgressView(value: progress)
+                Text(profileDescription(profile))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+            case let .available(profile, size):
+                Label("Optimized playback", systemImage: "checkmark.circle.fill")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.green)
+                InspectorValueRow(
+                    title: "Profile",
+                    value: profileDescription(profile)
+                )
+                InspectorValueRow(
+                    title: "Cached size",
+                    value: byteCountFormatter.string(fromByteCount: size)
+                )
+                Text("The original media remains unchanged and is used whenever higher quality is requested.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    model.removeOptimizedVideo(wallpaper)
+                } label: {
+                    Label("Remove Optimized Copy", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+
+            case let .failed(message):
+                Label("Using original media", systemImage: "exclamationmark.triangle")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.orange)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    model.optimizeVideo(wallpaper)
+                } label: {
+                    Label("Try Again", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+
     private var fileSection: some View {
         InspectorSection(title: "File") {
             Text(wallpaper.effectiveFilePath)
@@ -333,6 +417,12 @@ struct WallpaperInspectorView: View {
         formatter.countStyle = .file
         formatter.allowedUnits = [.useKB, .useMB, .useGB]
         return formatter
+    }
+
+    private func profileDescription(
+        _ profile: VideoOptimizationProfile
+    ) -> String {
+        "Up to \(profile.maximumWidth) × \(profile.maximumHeight) at \(profile.maximumFrameRate) fps"
     }
 
     private func durationFormatter(_ duration: Double) -> String {

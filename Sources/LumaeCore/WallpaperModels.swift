@@ -161,3 +161,76 @@ public enum DuplicateDetector {
         library.first { $0.contentHash == candidate.contentHash && $0.id != candidate.id }
     }
 }
+
+public struct VideoOptimizationProfile: Codable, Hashable, Sendable {
+    public var maximumWidth: Int
+    public var maximumHeight: Int
+    public var maximumFrameRate: Int
+
+    public init(
+        maximumWidth: Int,
+        maximumHeight: Int,
+        maximumFrameRate: Int
+    ) {
+        self.maximumWidth = maximumWidth
+        self.maximumHeight = maximumHeight
+        self.maximumFrameRate = maximumFrameRate
+    }
+
+    public var cacheKey: String {
+        "w\(maximumWidth)-h\(maximumHeight)-f\(maximumFrameRate)"
+    }
+
+    public func reducesWork(for wallpaper: WallpaperMetadata) -> Bool {
+        wallpaper.pixelWidth > maximumWidth
+            || wallpaper.pixelHeight > maximumHeight
+            || (wallpaper.frameRate ?? 0) > Double(maximumFrameRate) + 0.5
+    }
+}
+
+public enum VideoOptimizationPlanner {
+    public static func profile(
+        for wallpaper: WallpaperMetadata,
+        quality: VideoQuality,
+        maximumFrameRate: Int,
+        displayPixelSizes: [LSize]
+    ) -> VideoOptimizationProfile? {
+        guard wallpaper.kind == .video else { return nil }
+
+        let largestDisplayWidth = Int(
+            displayPixelSizes.map(\.width).max() ?? Double(wallpaper.pixelWidth)
+        )
+        let largestDisplayHeight = Int(
+            displayPixelSizes.map(\.height).max() ?? Double(wallpaper.pixelHeight)
+        )
+
+        let qualityLimit: (Int, Int, Int)
+        switch quality {
+        case .efficiency:
+            qualityLimit = (1_920, 1_080, 30)
+        case .balanced:
+            qualityLimit = (2_560, 1_440, 30)
+        case .quality:
+            qualityLimit = (3_840, 2_160, maximumFrameRate)
+        }
+
+        let targetWidth = max(
+            min(qualityLimit.0, largestDisplayWidth, wallpaper.pixelWidth),
+            2
+        )
+        let targetHeight = max(
+            min(qualityLimit.1, largestDisplayHeight, wallpaper.pixelHeight),
+            2
+        )
+        let targetFrameRate = max(
+            min(maximumFrameRate, qualityLimit.2),
+            1
+        )
+        let profile = VideoOptimizationProfile(
+            maximumWidth: targetWidth - targetWidth % 2,
+            maximumHeight: targetHeight - targetHeight % 2,
+            maximumFrameRate: targetFrameRate
+        )
+        return profile.reducesWork(for: wallpaper) ? profile : nil
+    }
+}

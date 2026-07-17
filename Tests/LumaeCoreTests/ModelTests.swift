@@ -297,4 +297,62 @@ final class ModelTests:XCTestCase {
    sessionDisplayIDs:["main","external"],coveredDisplayIDs:[],manuallyPaused:true
   ))
  }
+
+ func testVideoOptimizationPlannerUsesQualityTiersAndNeverUpscales(){
+  let video=WallpaperMetadata(
+   name:"4K",originalFilePath:"/tmp/4k.mov",format:.mov,
+   fileSizeBytes:1,pixelWidth:3840,pixelHeight:2160,
+   durationSeconds:10,frameRate:60,contentHash:"hash"
+  )
+  let efficiency=VideoOptimizationPlanner.profile(
+   for:video,quality:.efficiency,maximumFrameRate:60,
+   displayPixelSizes:[LSize(width:3840,height:2160)]
+  )
+  XCTAssertEqual(efficiency,VideoOptimizationProfile(
+   maximumWidth:1920,maximumHeight:1080,maximumFrameRate:30
+  ))
+  let balanced=VideoOptimizationPlanner.profile(
+   for:video,quality:.balanced,maximumFrameRate:60,
+   displayPixelSizes:[LSize(width:2560,height:1440)]
+  )
+  XCTAssertEqual(balanced,VideoOptimizationProfile(
+   maximumWidth:2560,maximumHeight:1440,maximumFrameRate:30
+  ))
+ }
+ func testVideoOptimizationPlannerSupportsFrameRateOnlyReduction(){
+  let video=WallpaperMetadata(
+   name:"1080p60",originalFilePath:"/tmp/video.mov",format:.mov,
+   fileSizeBytes:1,pixelWidth:1920,pixelHeight:1080,
+   durationSeconds:10,frameRate:60,contentHash:"hash"
+  )
+  let profile=VideoOptimizationPlanner.profile(
+   for:video,quality:.quality,maximumFrameRate:30,
+   displayPixelSizes:[LSize(width:1920,height:1080)]
+  )
+  XCTAssertEqual(profile?.maximumWidth,1920)
+  XCTAssertEqual(profile?.maximumHeight,1080)
+  XCTAssertEqual(profile?.maximumFrameRate,30)
+ }
+ func testVideoOptimizationPlannerKeepsAlreadyEfficientOriginal(){
+  let video=WallpaperMetadata(
+   name:"1080p30",originalFilePath:"/tmp/video.mov",format:.mov,
+   fileSizeBytes:1,pixelWidth:1920,pixelHeight:1080,
+   durationSeconds:10,frameRate:30,contentHash:"hash"
+  )
+  XCTAssertNil(VideoOptimizationPlanner.profile(
+   for:video,quality:.quality,maximumFrameRate:60,
+   displayPixelSizes:[LSize(width:3840,height:2160)]
+  ))
+ }
+ func testVideoOptimizationPlannerIgnoresStaticWallpapers(){
+  let image=WallpaperMetadata(
+   name:"Image",originalFilePath:"/tmp/image.jpg",format:.jpg,
+   fileSizeBytes:1,pixelWidth:6000,pixelHeight:4000,
+   contentHash:"hash"
+  )
+  XCTAssertNil(VideoOptimizationPlanner.profile(
+   for:image,quality:.efficiency,maximumFrameRate:30,
+   displayPixelSizes:[LSize(width:1920,height:1080)]
+  ))
+ }
 }

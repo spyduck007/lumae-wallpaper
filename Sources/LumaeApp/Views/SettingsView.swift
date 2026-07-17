@@ -131,7 +131,13 @@ private struct PlaybackSettingsPane: View {
                     title: "Playback quality",
                     detail: "Higher quality can increase GPU and energy usage."
                 ) {
-                    Picker("Playback quality", selection: $model.state.settings.videoQuality) {
+                    Picker(
+                        "Playback quality",
+                        selection: Binding(
+                            get: { model.state.settings.videoQuality },
+                            set: { model.setVideoQuality($0) }
+                        )
+                    ) {
                         ForEach(VideoQuality.allCases, id: \.self) {
                             Text($0.rawValue.capitalized).tag($0)
                         }
@@ -146,7 +152,13 @@ private struct PlaybackSettingsPane: View {
                     title: "Maximum frame rate",
                     detail: "Caps playback when the source or display supports a higher rate."
                 ) {
-                    Picker("Maximum frame rate", selection: $model.state.settings.maximumFrameRate) {
+                    Picker(
+                        "Maximum frame rate",
+                        selection: Binding(
+                            get: { model.state.settings.maximumFrameRate },
+                            set: { model.setMaximumFrameRate($0) }
+                        )
+                    ) {
                         ForEach(frameRates, id: \.self) { rate in
                             Text("\(rate) fps").tag(rate)
                         }
