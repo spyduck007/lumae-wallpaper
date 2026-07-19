@@ -76,6 +76,7 @@ struct LibraryView: View {
                     playlistID: id,
                     onDelete: { selectedSection = .library }
                 )
+                .id(id)
                 .navigationTitle(title)
 
             default:
@@ -90,7 +91,11 @@ struct LibraryView: View {
             }
         }
         .dropDestination(for: URL.self) { urls, _ in
-            Task { await model.importURLs(urls) }
+            let supported = urls.filter {
+                SupportedWallpaperFormat.from(pathExtension: $0.pathExtension) != nil
+            }
+            guard !supported.isEmpty else { return false }
+            Task { await model.importURLs(supported) }
             return true
         } isTargeted: {
             isDropTargeted = $0

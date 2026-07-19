@@ -46,7 +46,7 @@ public enum PlaylistEngine {
             return eligible[min(max(pick, 0), eligible.count - 1)]
         }
 
-        let index = configuration.cursor % eligible.count
+        let index = ((configuration.cursor % eligible.count) + eligible.count) % eligible.count
         configuration.cursor = (index + 1) % eligible.count
         return eligible[index]
     }

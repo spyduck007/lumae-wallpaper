@@ -31,6 +31,7 @@ struct WallpaperCard: View {
     @EnvironmentObject var model: AppModel
     let item: WallpaperMetadata
     @State private var hovering = false
+    @State private var confirmRemoval = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -140,8 +141,20 @@ struct WallpaperCard: View {
             Divider()
 
             Button("Remove from Lumae", role: .destructive) {
+                confirmRemoval = true
+            }
+        }
+        .confirmationDialog(
+            "Remove “\(item.name)” from Lumae?",
+            isPresented: $confirmRemoval,
+            titleVisibility: .visible
+        ) {
+            Button("Remove from Lumae", role: .destructive) {
                 model.remove(item)
             }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The original media file will not be deleted.")
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(item.name), \(item.kind.rawValue) wallpaper")

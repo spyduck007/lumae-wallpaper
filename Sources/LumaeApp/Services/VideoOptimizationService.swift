@@ -181,10 +181,13 @@ actor VideoOptimizationService {
                 exporter.cancelExport()
             }
 
-            try? FileManager.default.removeItem(at: targetURL)
-            try FileManager.default.moveItem(
-                at: temporaryURL,
-                to: targetURL
+            // Replace atomically so a crash or failure mid-swap can never
+            // leave the cache with neither the old nor the new copy:
+            // replaceItemAt keeps the original in place until the new item
+            // has been fully installed.
+            _ = try FileManager.default.replaceItemAt(
+                targetURL,
+                withItemAt: temporaryURL
             )
             progress(1)
             return targetURL

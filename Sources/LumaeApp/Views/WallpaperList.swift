@@ -4,6 +4,7 @@ import LumaeCore
 struct WallpaperList: View {
     @EnvironmentObject private var model: AppModel
     let items: [WallpaperMetadata]
+    @State private var pendingRemoval: WallpaperMetadata?
 
     var body: some View {
         Table(items, selection: $model.selectedWallpaperID) {
@@ -81,9 +82,31 @@ struct WallpaperList: View {
                 Divider()
 
                 Button("Remove from Lumae", role: .destructive) {
-                    model.remove(item)
+                    pendingRemoval = item
                 }
             }
+        }
+        .confirmationDialog(
+            "Remove “\(pendingRemoval?.name ?? "")” from Lumae?",
+            isPresented: Binding(
+                get: { pendingRemoval != nil },
+                set: { isPresented in
+                    if !isPresented { pendingRemoval = nil }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Remove from Lumae", role: .destructive) {
+                if let item = pendingRemoval {
+                    model.remove(item)
+                }
+                pendingRemoval = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingRemoval = nil
+            }
+        } message: {
+            Text("The original media file will not be deleted.")
         }
     }
 }

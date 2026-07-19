@@ -461,11 +461,11 @@ final class AppModel: ObservableObject {
 
     private func applyCurrentConfiguration() async {
         do {
-            try await save()
             try await engine.applyConfiguration(
                 state: state,
                 topology: displayTopology
             )
+            try await save()
             prepareOptimizedVideosForCurrentConfiguration()
         } catch {
             errorMessage = error.localizedDescription

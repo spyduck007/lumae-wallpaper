@@ -12,14 +12,23 @@ final class WallpaperWindowManager {
     private var windows: [String: WallpaperWindow] = [:]
     private var displayFrames: [String: NSRect] = [:]
     private var observers: [NSObjectProtocol] = []
+    private var distributedObservers: [NSObjectProtocol] = []
     private var windowObservers: [ObjectIdentifier: [NSObjectProtocol]] = [:]
     private var eventMonitors: [Any] = []
     private var repairWorkItems: [DispatchWorkItem] = []
     private var replacementSnapshot: ReplacementSnapshot?
+    private var watchdogTimer: DispatchSourceTimer?
+
+    /// Continuously reasserts window level/order independent of any
+    /// notification, so the real macOS desktop can never stay visible
+    /// above the wallpaper for longer than one tick of this interval,
+    /// regardless of which system transition caused the reorder.
+    private static let watchdogInterval: TimeInterval = 0.1
 
     init() {
         let workspaceCenter = NSWorkspace.shared.notificationCenter
         let notificationCenter = NotificationCenter.default
+        let distributedCenter = DistributedNotificationCenter.default()
 
         observe(
             center: workspaceCenter,
@@ -45,6 +54,15 @@ final class WallpaperWindowManager {
             center: notificationCenter,
             name: NSApplication.didChangeScreenParametersNotification,
             delays: [0, 0.08, 0.25, 0.60]
+        )
+
+        // loginwindow posts this distributed notification tighter to the
+        // actual unlock boundary than sessionDidBecomeActiveNotification,
+        // which only arrives once the app's own session resumes.
+        observeDistributed(
+            center: distributedCenter,
+            name: Notification.Name("com.apple.screenIsUnlocked"),
+            delays: [0, 0.04, 0.10, 0.20, 0.38, 0.70]
         )
 
         if let monitor = NSEvent.addGlobalMonitorForEvents(
@@ -73,9 +91,12 @@ final class WallpaperWindowManager {
         } {
             eventMonitors.append(monitor)
         }
+
+        startWatchdog()
     }
 
     deinit {
+        watchdogTimer?.cancel()
         repairWorkItems.forEach { $0.cancel() }
         eventMonitors.forEach(NSEvent.removeMonitor)
         windowObservers.values.flatMap { $0 }.forEach {
@@ -85,6 +106,35 @@ final class WallpaperWindowManager {
             NotificationCenter.default.removeObserver(observer)
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
+        for observer in distributedObservers {
+            DistributedNotificationCenter.default().removeObserver(observer)
+        }
+    }
+
+    private func startWatchdog() {
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(
+            deadline: .now() + Self.watchdogInterval,
+            repeating: Self.watchdogInterval,
+            leeway: .milliseconds(20)
+        )
+        timer.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                self?.watchdogTick()
+            }
+        }
+        timer.resume()
+        watchdogTimer = timer
+    }
+
+    private func watchdogTick() {
+        // forceOrder must stay true: NSWindow.isVisible only reflects
+        // whether the window is ordered in at all, not whether the system
+        // has just recomposited another (its own real desktop) window on
+        // top of ours, which is exactly the case this watchdog exists to
+        // catch every tick rather than only when a notification fires.
+        guard !windows.isEmpty, replacementSnapshot == nil else { return }
+        repairWindows(forceOrder: true)
     }
 
     func beginReplacement() {
@@ -266,6 +316,24 @@ final class WallpaperWindowManager {
         delays: [TimeInterval]
     ) {
         observers.append(
+            center.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.scheduleRepairBurst(delays: delays)
+                }
+            }
+        )
+    }
+
+    private func observeDistributed(
+        center: DistributedNotificationCenter,
+        name: Notification.Name,
+        delays: [TimeInterval]
+    ) {
+        distributedObservers.append(
             center.addObserver(
                 forName: name,
                 object: nil,

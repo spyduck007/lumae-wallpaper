@@ -62,15 +62,19 @@ public enum WallpaperPlaylistEngine {
 
         switch direction {
         case .previous:
-            guard let previous = playlist.history.popLast() else {
-                return playlist.currentWallpaperID ?? eligible.first
+            while let candidate = playlist.history.popLast() {
+                guard eligible.contains(candidate) else { continue }
+                playlist.currentWallpaperID = candidate
+                if let index = eligible.firstIndex(of: candidate) {
+                    playlist.cursor = (index + 1) % eligible.count
+                }
+                playlist.lastAdvancedAt = Date()
+                return candidate
             }
-            playlist.currentWallpaperID = previous
-            if let index = eligible.firstIndex(of: previous) {
-                playlist.cursor = (index + 1) % eligible.count
-            }
-            playlist.lastAdvancedAt = Date()
-            return previous
+            let fallback = playlist.currentWallpaperID.flatMap { eligible.contains($0) ? $0 : nil }
+                ?? eligible.first
+            playlist.currentWallpaperID = fallback
+            return fallback
 
         case .next:
             if let current = playlist.currentWallpaperID {
@@ -85,11 +89,12 @@ public enum WallpaperPlaylistEngine {
                 let candidates = eligible.count > 1
                     ? eligible.filter { $0 != playlist.currentWallpaperID }
                     : eligible
-                let pick = randomIndex?(candidates.count)
-                    ?? Int.random(in: 0..<candidates.count)
-                next = candidates[min(max(pick, 0), candidates.count - 1)]
+                let pool = candidates.isEmpty ? eligible : candidates
+                let pick = randomIndex?(pool.count)
+                    ?? Int.random(in: 0..<pool.count)
+                next = pool[min(max(pick, 0), pool.count - 1)]
             } else {
-                let index = playlist.cursor % eligible.count
+                let index = ((playlist.cursor % eligible.count) + eligible.count) % eligible.count
                 next = eligible[index]
                 playlist.cursor = (index + 1) % eligible.count
             }
