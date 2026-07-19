@@ -70,9 +70,29 @@ final class NowPlayingService: ObservableObject {
     private var artworkURL: URL?
     private var artworkDownloadTask: URLSessionDataTask?
     private var mediaRemoteArtworkSignature: Int?
+    private var activeObserverCount = 0
 
     private init() {
         loadMediaRemote()
+    }
+
+    deinit {
+        timer?.invalidate()
+        artworkDownloadTask?.cancel()
+        if let mediaRemoteHandle {
+            dlclose(mediaRemoteHandle)
+        }
+    }
+
+    /// Widgets call this while a Now Playing widget is actually on screen
+    /// (editor preview or live desktop overlay). Reference-counted so
+    /// mirrored widgets across several displays share one timer, and the
+    /// polling stops entirely once no widget references it any more,
+    /// rather than running for the rest of the process's life after a
+    /// widget is added once and later removed.
+    func beginObserving() {
+        activeObserverCount += 1
+        guard timer == nil else { return }
         refresh()
         timer = Timer.scheduledTimer(
             withTimeInterval: 3,
@@ -82,12 +102,11 @@ final class NowPlayingService: ObservableObject {
         }
     }
 
-    deinit {
+    func endObserving() {
+        activeObserverCount = max(0, activeObserverCount - 1)
+        guard activeObserverCount == 0 else { return }
         timer?.invalidate()
-        artworkDownloadTask?.cancel()
-        if let mediaRemoteHandle {
-            dlclose(mediaRemoteHandle)
-        }
+        timer = nil
     }
 
     func refresh() {
@@ -195,22 +214,32 @@ final class NowPlayingService: ObservableObject {
             return
         }
 
-        let source = #"""
-        tell application "Spotify"
-            if player state is stopped then return ""
-            set t to current track
-            return (name of t) & linefeed & (artist of t) & linefeed & (album of t) & linefeed & ((duration of t) as string) & linefeed & ((player position) as string) & linefeed & ((player state) as string) & linefeed & (artwork url of t)
-        end tell
-        """#
+        // NSAppleScript's executeAndReturnError is a slow, synchronous
+        // Apple Events round trip (can be tens to hundreds of ms). Running
+        // it directly in the timer callback used to block the main thread
+        // on this same cadence. Run the script off-thread and only hop
+        // back to main to publish the parsed result.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let source = #"""
+            tell application "Spotify"
+                if player state is stopped then return ""
+                set t to current track
+                return (name of t) & linefeed & (artist of t) & linefeed & (album of t) & linefeed & ((duration of t) as string) & linefeed & ((player position) as string) & linefeed & ((player state) as string) & linefeed & (artwork url of t)
+            end tell
+            """#
 
-        var error: NSDictionary?
-        guard let result = NSAppleScript(source: source)?.executeAndReturnError(&error),
-              error == nil else {
-            publish(.empty)
-            return
+            var error: NSDictionary?
+            let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
+            let resultString = error == nil ? result?.stringValue : nil
+
+            DispatchQueue.main.async {
+                self?.handleSpotifyScriptResult(resultString)
+            }
         }
+    }
 
-        let lines = result.stringValue?.components(separatedBy: .newlines) ?? []
+    private func handleSpotifyScriptResult(_ resultString: String?) {
+        let lines = resultString?.components(separatedBy: .newlines) ?? []
         guard lines.count >= 6, !lines[0].isEmpty else {
             publish(.empty)
             return

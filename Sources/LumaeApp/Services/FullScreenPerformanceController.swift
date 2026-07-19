@@ -21,7 +21,7 @@ final class FullScreenPerformanceController {
             center: workspaceCenter,
             name: NSWorkspace.activeSpaceDidChangeNotification,
             revealFirst: true,
-            delays: [0.18, 0.42, 0.80]
+            delays: [0.18, 0.80]
         )
         observe(
             center: workspaceCenter,
@@ -33,7 +33,7 @@ final class FullScreenPerformanceController {
             center: workspaceCenter,
             name: NSWorkspace.didWakeNotification,
             revealFirst: true,
-            delays: [0.30, 0.75, 1.30]
+            delays: [0.30, 1.30]
         )
         observe(
             center: workspaceCenter,
@@ -66,7 +66,7 @@ final class FullScreenPerformanceController {
             publish([])
             return
         }
-        scheduleEvaluation(delays: [0, 0.20, 0.50])
+        scheduleEvaluation(delays: [0, 0.50])
     }
 
     func revealDesktopForSystemTransition() {

@@ -33,15 +33,10 @@ final class BatteryService: ObservableObject {
 
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
+    private var activeObserverCount = 0
 
     private init() {
         refresh()
-        timer = Timer.scheduledTimer(
-            withTimeInterval: 120,
-            repeats: true
-        ) { [weak self] _ in
-            self?.refresh()
-        }
 
         let notificationCenter = NotificationCenter.default
         observers.append(
@@ -70,6 +65,29 @@ final class BatteryService: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
+    }
+
+    /// Widgets call this while a Battery widget is actually on screen.
+    /// Reference-counted so the recurring poll only runs while at least
+    /// one widget needs it, rather than for the rest of the process's
+    /// life once a widget has been shown once.
+    func beginObserving() {
+        activeObserverCount += 1
+        guard timer == nil else { return }
+        refresh()
+        timer = Timer.scheduledTimer(
+            withTimeInterval: 120,
+            repeats: true
+        ) { [weak self] _ in
+            self?.refresh()
+        }
+    }
+
+    func endObserving() {
+        activeObserverCount = max(0, activeObserverCount - 1)
+        guard activeObserverCount == 0 else { return }
+        timer?.invalidate()
+        timer = nil
     }
 
     func refresh() {

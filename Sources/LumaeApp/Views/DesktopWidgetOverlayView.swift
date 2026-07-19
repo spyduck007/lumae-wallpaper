@@ -237,6 +237,8 @@ struct NowPlayingWidgetView: View {
                 tint: artworkTintColor
             )
         }
+        .onAppear { service.beginObserving() }
+        .onDisappear { service.endObserving() }
     }
 
     private var artworkTintColor: Color? {
@@ -398,7 +400,10 @@ private struct EqualizerView: View {
 
     var body: some View {
         if isActive {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            // 20fps still reads as smooth for a bar equalizer, and in
+            // mirrored mode this Canvas redraws independently per display,
+            // so the saving multiplies with monitor count.
+            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
                 equalizerCanvas(date: context.date, isActive: true)
             }
         } else {
@@ -854,6 +859,8 @@ struct BatteryWidgetView: View {
             cornerRadius: 19 * layoutScale,
             scale: layoutScale
         )
+        .onAppear { service.beginObserving() }
+        .onDisappear { service.endObserving() }
     }
 
     private func batteryIcon(_ snapshot: BatterySnapshot) -> some View {

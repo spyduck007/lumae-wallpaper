@@ -18,11 +18,16 @@ final class WallpaperWindowManager {
     private var repairWorkItems: [DispatchWorkItem] = []
     private var replacementSnapshot: ReplacementSnapshot?
     private var watchdogTimer: DispatchSourceTimer?
+    private var isScreenLocked = false
 
     /// Continuously reasserts window level/order independent of any
     /// notification, so the real macOS desktop can never stay visible
     /// above the wallpaper for longer than one tick of this interval,
-    /// regardless of which system transition caused the reorder.
+    /// regardless of which system transition caused the reorder. The tick
+    /// itself only does real work (an order-front call) when occlusion
+    /// state indicates something is actually covering the window, so the
+    /// steady-state cost of this polling is a cheap property read rather
+    /// than a WindowServer round trip 10 times a second forever.
     private static let watchdogInterval: TimeInterval = 0.1
 
     init() {
@@ -63,6 +68,24 @@ final class WallpaperWindowManager {
             center: distributedCenter,
             name: Notification.Name("com.apple.screenIsUnlocked"),
             delays: [0, 0.04, 0.10, 0.20, 0.38, 0.70]
+        ) { [weak self] in
+            self?.isScreenLocked = false
+        }
+
+        // While locked, loginwindow fully covers every wallpaper window
+        // anyway, so the watchdog has nothing useful to do; skipping it
+        // avoids pointless order-front calls for however long the screen
+        // stays locked.
+        distributedObservers.append(
+            distributedCenter.addObserver(
+                forName: Notification.Name("com.apple.screenIsLocked"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.isScreenLocked = true
+                }
+            }
         )
 
         if let monitor = NSEvent.addGlobalMonitorForEvents(
@@ -128,13 +151,21 @@ final class WallpaperWindowManager {
     }
 
     private func watchdogTick() {
-        // forceOrder must stay true: NSWindow.isVisible only reflects
-        // whether the window is ordered in at all, not whether the system
-        // has just recomposited another (its own real desktop) window on
-        // top of ours, which is exactly the case this watchdog exists to
-        // catch every tick rather than only when a notification fires.
-        guard !windows.isEmpty, replacementSnapshot == nil else { return }
-        repairWindows(forceOrder: true)
+        guard !windows.isEmpty, replacementSnapshot == nil, !isScreenLocked else {
+            return
+        }
+        // occlusionState is a cached property the system already keeps
+        // current (it's what backs didChangeOcclusionStateNotification),
+        // so reading it here costs nothing like a WindowServer round trip.
+        // Only when a window is fully covered by something else — exactly
+        // the case where the real desktop could be showing through — do
+        // we pay for an actual order-front call.
+        for (displayID, window) in windows {
+            let expectedFrame = displayFrames[displayID] ?? window.frame
+            let isCovered = !window.isVisible
+                || !window.occlusionState.contains(.visible)
+            repairWindow(window, expectedFrame: expectedFrame, forceOrder: isCovered)
+        }
     }
 
     func beginReplacement() {
@@ -331,7 +362,8 @@ final class WallpaperWindowManager {
     private func observeDistributed(
         center: DistributedNotificationCenter,
         name: Notification.Name,
-        delays: [TimeInterval]
+        delays: [TimeInterval],
+        before: (@MainActor @Sendable () -> Void)? = nil
     ) {
         distributedObservers.append(
             center.addObserver(
@@ -340,6 +372,7 @@ final class WallpaperWindowManager {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
+                    before?()
                     self?.scheduleRepairBurst(delays: delays)
                 }
             }

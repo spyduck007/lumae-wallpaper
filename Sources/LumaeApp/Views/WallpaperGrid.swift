@@ -165,6 +165,8 @@ struct WallpaperThumbnail: View {
     let item: WallpaperMetadata
     let animate: Bool
 
+    @State private var loadedImage: NSImage?
+
     var body: some View {
         Color.black
             .overlay {
@@ -181,13 +183,15 @@ struct WallpaperThumbnail: View {
                 }
             }
             .clipped()
+            .task(id: item.thumbnailPath) {
+                await loadThumbnailIfNeeded()
+            }
     }
 
     @ViewBuilder
     private var poster: some View {
-        if let path = item.thumbnailPath,
-           let image = NSImage(contentsOfFile: path) {
-            Image(nsImage: image)
+        if let loadedImage {
+            Image(nsImage: loadedImage)
                 .resizable()
                 .scaledToFill()
         } else {
@@ -212,6 +216,33 @@ struct WallpaperThumbnail: View {
             }
         }
     }
+
+    /// Previously read synchronously on the main thread inside `poster`,
+    /// re-running on every hover toggle and grid-scroll cell
+    /// materialization. Reading off-thread with a small memory cache
+    /// avoids repeatedly hitting disk for the same already-generated
+    /// thumbnail file.
+    private func loadThumbnailIfNeeded() async {
+        guard let path = item.thumbnailPath else {
+            loadedImage = nil
+            return
+        }
+        let key = path as NSString
+        if let cached = Self.imageCache.object(forKey: key) {
+            loadedImage = cached
+            return
+        }
+        let image = await Task.detached(priority: .utility) {
+            NSImage(contentsOfFile: path)
+        }.value
+        guard !Task.isCancelled else { return }
+        if let image {
+            Self.imageCache.setObject(image, forKey: key)
+        }
+        loadedImage = image
+    }
+
+    private static let imageCache = NSCache<NSString, NSImage>()
 }
 
 /// A lightweight AppKit/Core Animation video preview.

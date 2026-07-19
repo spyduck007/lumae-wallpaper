@@ -19,6 +19,10 @@ final class WallpaperEngine {
         self.windows = windows
         self.fullScreenController = fullScreenController
         imageCache.countLimit = 8
+        // Count alone treats an 8K panorama the same as a tiny PNG; cap by
+        // approximate decoded memory too so a handful of large images
+        // can't balloon well past what 8 small ones would cost.
+        imageCache.totalCostLimit = 512 * 1024 * 1024
 
         windows.onSystemRevealGesture = { [weak fullScreenController] in
             fullScreenController?.revealDesktopForSystemTransition()
@@ -340,7 +344,11 @@ final class WallpaperEngine {
         guard let image = NSImage(contentsOfFile: path) else {
             throw EngineError.unreadable
         }
-        imageCache.setObject(image, forKey: key)
+        let approximateBytes = max(
+            Int(image.size.width * image.size.height * 4),
+            1
+        )
+        imageCache.setObject(image, forKey: key, cost: approximateBytes)
         return image
     }
 

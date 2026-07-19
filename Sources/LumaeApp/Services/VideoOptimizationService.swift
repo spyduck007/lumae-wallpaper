@@ -18,6 +18,16 @@ enum VideoOptimizationState: Equatable {
 actor VideoOptimizationService {
     private var activeExports: [String: Task<URL, Error>] = [:]
 
+    // Distinct videos needing optimization (e.g. several displays each
+    // assigned a different large video, or a quality/FPS change that
+    // invalidates every cached profile at once) used to all transcode
+    // concurrently, fighting the currently-playing wallpaper for the same
+    // encode/decode hardware. Serializing exports keeps background
+    // transcoding from competing with live playback smoothness.
+    private let maxConcurrentExports = 1
+    private var runningExportCount = 0
+    private var exportWaiters: [CheckedContinuation<Void, Never>] = []
+
     static func optimizedURL(
         contentHash: String,
         profile: VideoOptimizationProfile
@@ -70,12 +80,31 @@ actor VideoOptimizationService {
             return try await active.value
         }
 
-        let task = Task<URL, Error> {
-            try await Self.export(request: request, progress: progress)
+        let task = Task<URL, Error>(priority: .utility) { [weak self] in
+            await self?.acquireExportSlot()
+            defer { Task { [weak self] in await self?.releaseExportSlot() } }
+            return try await Self.export(request: request, progress: progress)
         }
         activeExports[key] = task
         defer { activeExports[key] = nil }
         return try await task.value
+    }
+
+    private func acquireExportSlot() async {
+        if runningExportCount < maxConcurrentExports {
+            runningExportCount += 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            exportWaiters.append(continuation)
+        }
+        runningExportCount += 1
+    }
+
+    private func releaseExportSlot() {
+        runningExportCount -= 1
+        guard !exportWaiters.isEmpty else { return }
+        exportWaiters.removeFirst().resume()
     }
 
     func removeOptimizedCopies(for wallpaper: WallpaperMetadata) throws {

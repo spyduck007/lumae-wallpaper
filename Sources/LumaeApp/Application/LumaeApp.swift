@@ -45,8 +45,21 @@ struct LumaeApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var backgroundActivityToken: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+
+        // Lumae has no key window most of the time and often shows a
+        // static (audio-less, video-less) wallpaper, which gives macOS no
+        // signal that this process is doing meaningful work. Without this,
+        // App Nap can throttle the timers that keep widgets updating and
+        // the desktop-window watchdog responsive after the app has sat in
+        // the background for a while.
+        backgroundActivityToken = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep,
+            reason: "Rendering desktop wallpaper and widgets"
+        )
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

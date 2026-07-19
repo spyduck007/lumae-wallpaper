@@ -92,6 +92,15 @@ final class AppModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+
+        // Previously only reachable from a manual Settings button, so the
+        // thumbnail cache could grow unbounded for the lifetime of an
+        // install. A low-priority sweep at launch keeps it near the
+        // configured limit without adding any startup latency.
+        let limit = state.settings.thumbnailCacheLimitBytes
+        Task.detached(priority: .utility) { [cache] in
+            try? await cache.cleanup(limit: limit)
+        }
     }
 
     func presentImporter() {
