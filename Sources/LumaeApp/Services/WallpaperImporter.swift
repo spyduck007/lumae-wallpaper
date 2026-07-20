@@ -8,24 +8,64 @@ import LumaeCore
 actor WallpaperImporter {
     static let allowedTypes: [UTType] = [.jpeg, .png, .heic, .tiff, .gif, .mpeg4Movie, .quickTimeMovie, .video]
 
-    func importFiles(_ urls: [URL], behavior: ImportBehavior, managedLibraryPath: String?, existing: [WallpaperMetadata], thumbnailCache: ThumbnailCache) async throws -> [WallpaperMetadata] {
+    // Reserves a content hash for the duration of processing that file
+    // (across the awaits below), so a second concurrent importFiles call
+    // on this same actor — e.g. the import panel triggered twice quickly,
+    // or overlapping with a drag-and-drop — sees it as already in flight
+    // instead of both calls independently passing the duplicate check
+    // against the same stale `existing` snapshot.
+    private var pendingImportHashes: Set<String> = []
+
+    func importFiles(
+        _ urls: [URL],
+        behavior: ImportBehavior,
+        managedLibraryPath: String?,
+        existing: [WallpaperMetadata],
+        thumbnailCache: ThumbnailCache
+    ) async -> WallpaperImportOutcome {
         var result: [WallpaperMetadata] = []
+        var failures: [ImportFailure] = []
         var hashes = Set(existing.map(\.contentHash))
+
         for source in urls {
-            guard let format = SupportedWallpaperFormat.from(pathExtension: source.pathExtension) else { throw ImportError.unsupported(source.lastPathComponent) }
-            let hash = try hashFile(source)
-            guard !hashes.contains(hash) else { continue }
-            hashes.insert(hash)
-            let effective = try managedURL(for: source, behavior: behavior, explicitPath: managedLibraryPath)
-            let values = try effective.resourceValues(forKeys: [.fileSizeKey])
-            let dimensions = try await mediaDimensions(effective, kind: format.kind)
-            let thumb = try await thumbnailCache.thumbnail(for: effective, kind: format.kind, hash: hash)
-            result.append(WallpaperMetadata(name: source.deletingPathExtension().lastPathComponent, originalFilePath: source.path,
-                managedLibraryPath: behavior == .copyToManagedLibrary ? effective.path : nil, format: format,
-                fileSizeBytes: Int64(values.fileSize ?? 0), pixelWidth: dimensions.width, pixelHeight: dimensions.height,
-                durationSeconds: dimensions.duration, frameRate: dimensions.frameRate, thumbnailPath: thumb.path, contentHash: hash))
+            var reservedHash: String?
+            var copiedURL: URL?
+            do {
+                guard let format = SupportedWallpaperFormat.from(pathExtension: source.pathExtension) else {
+                    throw ImportError.unsupported(source.lastPathComponent)
+                }
+                let hash = try hashFile(source)
+                guard !hashes.contains(hash), !pendingImportHashes.contains(hash) else {
+                    continue
+                }
+                pendingImportHashes.insert(hash)
+                reservedHash = hash
+
+                let effective = try managedURL(for: source, behavior: behavior, explicitPath: managedLibraryPath)
+                if behavior == .copyToManagedLibrary { copiedURL = effective }
+                let values = try effective.resourceValues(forKeys: [.fileSizeKey])
+                let dimensions = try await mediaDimensions(effective, kind: format.kind)
+                let thumb = try await thumbnailCache.thumbnail(for: effective, kind: format.kind, hash: hash)
+
+                result.append(WallpaperMetadata(name: source.deletingPathExtension().lastPathComponent, originalFilePath: source.path,
+                    managedLibraryPath: behavior == .copyToManagedLibrary ? effective.path : nil, format: format,
+                    fileSizeBytes: Int64(values.fileSize ?? 0), pixelWidth: dimensions.width, pixelHeight: dimensions.height,
+                    durationSeconds: dimensions.duration, frameRate: dimensions.frameRate, thumbnailPath: thumb.path, contentHash: hash))
+                hashes.insert(hash)
+            } catch {
+                // A file already copied into the managed library before a
+                // later step (metadata/thumbnail) failed would otherwise
+                // sit on disk forever, referenced by nothing.
+                if let copiedURL {
+                    try? FileManager.default.removeItem(at: copiedURL)
+                }
+                failures.append(ImportFailure(fileName: source.lastPathComponent, message: error.localizedDescription))
+            }
+            if let reservedHash {
+                pendingImportHashes.remove(reservedHash)
+            }
         }
-        return result
+        return WallpaperImportOutcome(imported: result, failures: failures)
     }
 
 
@@ -91,6 +131,16 @@ actor WallpaperImporter {
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil), let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any], let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int else { throw ImportError.unreadable(url.lastPathComponent) }
         return (w, h, nil, nil)
     }
+}
+
+struct WallpaperImportOutcome: Sendable {
+    var imported: [WallpaperMetadata]
+    var failures: [ImportFailure]
+}
+
+struct ImportFailure: Sendable {
+    var fileName: String
+    var message: String
 }
 
 enum ImportError: LocalizedError {

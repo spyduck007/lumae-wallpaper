@@ -120,18 +120,31 @@ final class AppModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        do {
-            let imported = try await importer.importFiles(
-                urls,
-                behavior: state.settings.importBehavior,
-                managedLibraryPath: state.settings.managedLibraryPath,
-                existing: state.wallpapers,
-                thumbnailCache: cache
-            )
-            state.wallpapers.append(contentsOf: imported)
-            try await save()
-        } catch {
-            errorMessage = error.localizedDescription
+        // A bad file partway through a multi-file drop no longer discards
+        // every file already processed before it — each file succeeds or
+        // fails independently, and only failures are reported.
+        let outcome = await importer.importFiles(
+            urls,
+            behavior: state.settings.importBehavior,
+            managedLibraryPath: state.settings.managedLibraryPath,
+            existing: state.wallpapers,
+            thumbnailCache: cache
+        )
+
+        if !outcome.imported.isEmpty {
+            state.wallpapers.append(contentsOf: outcome.imported)
+            do {
+                try await save()
+            } catch {
+                errorMessage = error.localizedDescription
+                return
+            }
+        }
+
+        if !outcome.failures.isEmpty {
+            errorMessage = outcome.failures.count == 1
+                ? outcome.failures[0].message
+                : "\(outcome.failures.count) of \(urls.count) files could not be imported."
         }
     }
 
@@ -1090,11 +1103,19 @@ extension AppModel {
         )
     }
 
+    /// Called from WidgetsView's `editableWidgets`, which is evaluated
+    /// during view body rendering — must stay a pure read. Creating a
+    /// missing configuration as a side effect here would mutate
+    /// `@Published` state mid-render (SwiftUI's "Publishing changes from
+    /// within view updates" hazard) and skip undo tracking. Every active
+    /// display's configuration is expected to already exist by the time
+    /// it's selectable in the UI, via `reconcileWidgetDisplays`, which
+    /// runs on topology changes and other proper lifecycle events instead.
     func widgetLayoutForEditing(_ displayID: String) -> [DesktopWidget] {
         guard widgetDisplayMode == .perDisplay,
               let index = widgetConfigurationIndex(
                 for: displayID,
-                createIfMissing: true
+                createIfMissing: false
               ) else {
             return widgets
         }
@@ -1576,9 +1597,13 @@ extension AppModel {
         displayTopology.activeDisplayIDs.subtracting([displayID])
     }
 
+    /// With createIfMissing false this must be a pure read — it's also
+    /// reached from widgetLayoutForEditing during view body rendering, so
+    /// even the fuzzy-match fingerprint "self-heal" below has to be gated
+    /// on createIfMissing rather than always writing back.
     private func widgetConfigurationIndex(for displayID: String, createIfMissing: Bool) -> Int? {
         guard let display = displayTopology.display(id: displayID) else { return nil }
-        var configurations = widgetDisplayConfigurations
+        let configurations = widgetDisplayConfigurations
         if let exact = configurations.firstIndex(where: { $0.displayFingerprint.stableID == display.fingerprint.stableID }) {
             return exact
         }
@@ -1587,17 +1612,21 @@ extension AppModel {
             in: configurations,
             excludingConfigurationIDs: reservedWidgetConfigurationIDs(except: display.id)
         ), let index = configurations.firstIndex(of: matched) {
-            configurations[index].displayFingerprint = display.fingerprint
-            widgetDisplayConfigurations = configurations
+            if createIfMissing {
+                var updated = configurations
+                updated[index].displayFingerprint = display.fingerprint
+                widgetDisplayConfigurations = updated
+            }
             return index
         }
         guard createIfMissing else { return nil }
-        configurations.append(WidgetDisplayConfiguration(
+        var appended = configurations
+        appended.append(WidgetDisplayConfiguration(
             displayFingerprint: display.fingerprint,
             widgets: widgetDisplayMode == .perDisplay ? widgets.map { $0.duplicated() } : []
         ))
-        widgetDisplayConfigurations = configurations
-        return configurations.indices.last
+        widgetDisplayConfigurations = appended
+        return appended.indices.last
     }
 }
 

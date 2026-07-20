@@ -12,6 +12,13 @@ final class WallpaperEngine {
     private var coveredDisplayIDs: Set<String> = []
     private var isManuallyPaused = false
     private var playbackRetirementTasks: [Task<Void, Never>] = []
+    /// Sessions handed to retirePlaybackSessions but not yet actually
+    /// stopped (still inside the 140ms crossfade delay). Tracked
+    /// separately from the tasks so stopAllPlayback can still tear them
+    /// down properly even when it cancels those tasks mid-flight, rather
+    /// than leaving their AVPlayerLooper/AVQueuePlayer abandoned without
+    /// disableLooping() ever running.
+    private var pendingRetirements: [VideoPlaybackKey: VideoPlaybackSession] = [:]
 
     init() {
         let windows = WallpaperWindowManager()
@@ -51,6 +58,13 @@ final class WallpaperEngine {
             fullScreenController.update(enabled: false, topology: topology)
             return
         }
+
+        // Warms imageCache off the main thread before the synchronous
+        // apply below runs, so cachedImage(at:) — which still decodes
+        // synchronously as a fallback — hits the cache in the common case
+        // instead of blocking this actor on disk I/O for every distinct
+        // image the new configuration needs.
+        await prewarmImages(for: state, topology: topology)
 
         let previousState = currentState
         let previousSessions = videoSessions
@@ -225,7 +239,8 @@ final class WallpaperEngine {
                 path: playbackURL.path,
                 muted: state.settings.audioBehavior == .muted,
                 maxFrameRate: state.settings.maximumFrameRate,
-                displayIDs: topology.activeDisplayIDs
+                displayIDs: topology.activeDisplayIDs,
+                scope: .shared
             )
 
             for display in topology.displays {
@@ -281,11 +296,18 @@ final class WallpaperEngine {
                 maximumFrameRate: maxFrameRate,
                 displayPixelSizes: [display.pixelSize]
             )
+            // Keyed by display so two displays independently assigned the
+            // same file in per-display mode each get their own decode
+            // session instead of being forced into synchronized playback;
+            // applyShared intentionally shares one key across all displays
+            // for duplicate/span modes by calling videoSession once for
+            // the whole group instead of per-display.
             let session = try videoSession(
                 path: playbackURL.path,
                 muted: audioBehavior == .muted,
                 maxFrameRate: maxFrameRate,
-                displayIDs: [display.id]
+                displayIDs: [display.id],
+                scope: .perDisplay(display.id)
             )
             windows.showVideo(
                 player: session.player,
@@ -344,21 +366,91 @@ final class WallpaperEngine {
         guard let image = NSImage(contentsOfFile: path) else {
             throw EngineError.unreadable
         }
-        let approximateBytes = max(
-            Int(image.size.width * image.size.height * 4),
-            1
-        )
-        imageCache.setObject(image, forKey: key, cost: approximateBytes)
+        imageCache.setObject(image, forKey: key, cost: imageMemoryCost(image))
         return image
+    }
+
+    private func imageMemoryCost(_ image: NSImage) -> Int {
+        max(Int(image.size.width * image.size.height * 4), 1)
+    }
+
+    /// Decodes every not-yet-cached image the upcoming configuration needs
+    /// off the main actor, so the synchronous apply pipeline below mostly
+    /// finds a warm cache instead of blocking on disk I/O. Only the file
+    /// read moves off-thread; everything crossing back into the task
+    /// group's results is Sendable (String/Data), and the actual NSImage
+    /// construction plus cache write happen back here on the actor.
+    private func prewarmImages(
+        for state: PersistedApplicationState,
+        topology: DisplayTopology
+    ) async {
+        let paths = imagePathsNeeded(for: state, topology: topology)
+            .filter { imageCache.object(forKey: $0 as NSString) == nil }
+        guard !paths.isEmpty else { return }
+
+        await withTaskGroup(of: (String, Data?).self) { group in
+            for path in paths {
+                group.addTask(priority: .userInitiated) {
+                    (path, try? Data(contentsOf: URL(fileURLWithPath: path)))
+                }
+            }
+            for await (path, data) in group {
+                guard let data, let image = data.isEmpty ? nil : NSImage(data: data) else {
+                    continue
+                }
+                imageCache.setObject(
+                    image,
+                    forKey: path as NSString,
+                    cost: imageMemoryCost(image)
+                )
+            }
+        }
+    }
+
+    private func imagePathsNeeded(
+        for state: PersistedApplicationState,
+        topology: DisplayTopology
+    ) -> Set<String> {
+        func isStaticImage(_ wallpaper: WallpaperMetadata) -> Bool {
+            !wallpaper.isMissing
+                && (wallpaper.kind == .image || wallpaper.kind == .animatedImage)
+        }
+
+        var paths: Set<String> = []
+        switch state.settings.presentationMode {
+        case .duplicate, .span:
+            if let wallpaperID = state.sharedWallpaperID,
+               let wallpaper = state.wallpapers.first(where: { $0.id == wallpaperID }),
+               isStaticImage(wallpaper) {
+                paths.insert(wallpaper.effectiveFilePath)
+            }
+
+        case .perDisplay:
+            let restored = DisplayAssignmentRestorer.restore(
+                saved: state.assignments,
+                onto: topology
+            )
+            for display in topology.displays {
+                guard let assignment = restored[display.id], assignment.enabled,
+                      let wallpaperID = assignment.wallpaperID,
+                      let wallpaper = state.wallpapers.first(where: { $0.id == wallpaperID }),
+                      isStaticImage(wallpaper) else {
+                    continue
+                }
+                paths.insert(wallpaper.effectiveFilePath)
+            }
+        }
+        return paths
     }
 
     private func videoSession(
         path: String,
         muted: Bool,
         maxFrameRate: Int,
-        displayIDs: Set<String>
+        displayIDs: Set<String>,
+        scope: VideoSharingScope
     ) throws -> VideoPlaybackSession {
-        let key = VideoPlaybackKey(path: path, muted: muted)
+        let key = VideoPlaybackKey(path: path, muted: muted, scope: scope)
         if let existing = videoSessions[key] {
             existing.displayIDs.formUnion(displayIDs)
             return existing
@@ -402,11 +494,14 @@ final class WallpaperEngine {
         _ sessions: [VideoPlaybackKey: VideoPlaybackSession]
     ) {
         guard !sessions.isEmpty else { return }
-        let task = Task { [sessions] in
+        for (key, session) in sessions {
+            pendingRetirements[key] = session
+        }
+        let task = Task { [weak self, sessions] in
             try? await Task.sleep(for: .milliseconds(140))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                self.stopPlaybackSessions(sessions)
+                self?.finishRetiring(sessions)
             }
         }
         playbackRetirementTasks.append(task)
@@ -414,6 +509,15 @@ final class WallpaperEngine {
             playbackRetirementTasks.removeFirst(
                 playbackRetirementTasks.count - 8
             )
+        }
+    }
+
+    private func finishRetiring(
+        _ sessions: [VideoPlaybackKey: VideoPlaybackSession]
+    ) {
+        stopPlaybackSessions(sessions)
+        for key in sessions.keys {
+            pendingRetirements[key] = nil
         }
     }
 
@@ -428,12 +532,27 @@ final class WallpaperEngine {
         playbackRetirementTasks.removeAll()
         stopPlaybackSessions(videoSessions)
         videoSessions.removeAll()
+        // Tasks cancelled above skip their own cleanup, so anything still
+        // mid-crossfade needs to be stopped here too or its
+        // AVPlayerLooper/AVQueuePlayer is abandoned without
+        // disableLooping() ever running.
+        stopPlaybackSessions(pendingRetirements)
+        pendingRetirements.removeAll()
     }
+}
+
+/// Distinguishes independent per-display playback (each display gets its
+/// own decode session, even for an identical file) from duplicate/span
+/// modes, where every display intentionally shares one session/key.
+private enum VideoSharingScope: Hashable {
+    case perDisplay(String)
+    case shared
 }
 
 private struct VideoPlaybackKey: Hashable {
     var path: String
     var muted: Bool
+    var scope: VideoSharingScope
 }
 
 @MainActor
