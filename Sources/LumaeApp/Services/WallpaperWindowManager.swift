@@ -20,14 +20,23 @@ final class WallpaperWindowManager {
     private var watchdogTimer: DispatchSourceTimer?
     private var isScreenLocked = false
 
+    /// Windows the system has actually pushed at least one occlusion
+    /// update for. A freshly created NSWindow (e.g. right after a display
+    /// is connected/disconnected, which tears down and recreates every
+    /// wallpaper window) has no such history yet, so its occlusionState
+    /// can't be trusted as a signal until the system proves it's tracking
+    /// it — until then the watchdog falls back to always forcing order.
+    private var occlusionTrackedWindowIDs: Set<ObjectIdentifier> = []
+
     /// Continuously reasserts window level/order independent of any
     /// notification, so the real macOS desktop can never stay visible
     /// above the wallpaper for longer than one tick of this interval,
-    /// regardless of which system transition caused the reorder. The tick
-    /// itself only does real work (an order-front call) when occlusion
-    /// state indicates something is actually covering the window, so the
-    /// steady-state cost of this polling is a cheap property read rather
-    /// than a WindowServer round trip 10 times a second forever.
+    /// regardless of which system transition caused the reorder. Once a
+    /// window's occlusion tracking is proven live, the tick only does real
+    /// work (an order-front call) when occlusion state indicates something
+    /// is actually covering it, so the steady-state cost of this polling
+    /// is a cheap property read rather than a WindowServer round trip 10
+    /// times a second forever.
     private static let watchdogInterval: TimeInterval = 0.1
 
     init() {
@@ -156,13 +165,14 @@ final class WallpaperWindowManager {
         }
         // occlusionState is a cached property the system already keeps
         // current (it's what backs didChangeOcclusionStateNotification),
-        // so reading it here costs nothing like a WindowServer round trip.
-        // Only when a window is fully covered by something else — exactly
-        // the case where the real desktop could be showing through — do
-        // we pay for an actual order-front call.
+        // so reading it here costs nothing like a WindowServer round trip
+        // — but only for a window we've actually seen an occlusion update
+        // for. An untrusted window (just created) always gets forced.
         for (displayID, window) in windows {
             let expectedFrame = displayFrames[displayID] ?? window.frame
-            let isCovered = !window.isVisible
+            let isTrusted = occlusionTrackedWindowIDs.contains(ObjectIdentifier(window))
+            let isCovered = !isTrusted
+                || !window.isVisible
                 || !window.occlusionState.contains(.visible)
             repairWindow(window, expectedFrame: expectedFrame, forceOrder: isCovered)
         }
@@ -314,6 +324,7 @@ final class WallpaperWindowManager {
             NotificationCenter.default.removeObserver($0)
         }
         snapshot.windows.values.forEach {
+            occlusionTrackedWindowIDs.remove(ObjectIdentifier($0))
             $0.orderOut(nil)
             $0.contentView = nil
         }
@@ -321,8 +332,20 @@ final class WallpaperWindowManager {
 
     private func observeWindow(_ window: WallpaperWindow) {
         let center = NotificationCenter.default
-        let tokens = [
-            NSWindow.didChangeOcclusionStateNotification,
+        let id = ObjectIdentifier(window)
+
+        let occlusionToken = center.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.occlusionTrackedWindowIDs.insert(id)
+                self?.scheduleRepairBurst(delays: [0, 0.04, 0.12, 0.28])
+            }
+        }
+
+        let otherTokens = [
             NSWindow.didChangeScreenNotification,
             NSWindow.didResizeNotification
         ].map { name in
@@ -338,7 +361,7 @@ final class WallpaperWindowManager {
                 }
             }
         }
-        windowObservers[ObjectIdentifier(window)] = tokens
+        windowObservers[id] = [occlusionToken] + otherTokens
     }
 
     private func observe(
