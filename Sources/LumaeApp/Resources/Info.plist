@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Lumae reads the currently playing Spotify track to display it in the Now Playing widget.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Lumae uses your location to show local weather in the Weather widget. This is only used if you enable the Weather widget and choose automatic location in Settings.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>

@@ -87,6 +87,61 @@ private struct GeneralSettingsPane: View {
                 UpdaterSettingsRows(updateController: updateController)
             }
 
+            SettingsSection(
+                title: "Weather",
+                description: "The only feature in Lumae besides update checks that makes a network request. Off by default."
+            ) {
+                SettingsToggleRow(
+                    title: "Enable weather",
+                    detail: "Fetches current conditions from Open-Meteo (no account or API key involved) for the Weather widget.",
+                    isOn: Binding(
+                        get: { model.state.settings.weatherEnabled },
+                        set: { model.setWeatherEnabled($0) }
+                    )
+                )
+
+                if model.state.settings.weatherEnabled {
+                    SettingsDivider()
+
+                    SettingsPickerRow(
+                        title: "Location",
+                        detail: "Automatic uses your Mac's location; manual looks up a place you type below."
+                    ) {
+                        Picker(
+                            "Location",
+                            selection: Binding(
+                                get: { model.state.settings.weatherLocationMode },
+                                set: { model.setWeatherLocationMode($0) }
+                            )
+                        ) {
+                            Text("Automatic").tag(WeatherLocationMode.automatic)
+                            Text("Manual").tag(WeatherLocationMode.manual)
+                        }
+                        .labelsHidden()
+                        .frame(width: 170)
+                    }
+
+                    if model.state.settings.weatherLocationMode == .manual {
+                        SettingsDivider()
+
+                        SettingsPickerRow(
+                            title: "Location name",
+                            detail: "A city or place name, e.g. “Austin, TX”."
+                        ) {
+                            TextField(
+                                "City or place",
+                                text: Binding(
+                                    get: { model.state.settings.weatherManualLocationName },
+                                    set: { model.setWeatherManualLocationName($0) }
+                                )
+                            )
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 170)
+                        }
+                    }
+                }
+            }
+
             SettingsSection(title: "Status") {
                 SettingsValueRow(
                     title: "Launch at login",
@@ -96,7 +151,7 @@ private struct GeneralSettingsPane: View {
             }
 
             SettingsFootnote(
-                "Lumae only contacts GitHub when checking for updates. Wallpaper files, metadata, and diagnostic information remain on your Mac."
+                "Lumae contacts GitHub when checking for updates, and — only if you enable it above — Open-Meteo and Apple's location services for the Weather widget. Wallpaper files, metadata, and diagnostic information remain on your Mac."
             )
         }
     }

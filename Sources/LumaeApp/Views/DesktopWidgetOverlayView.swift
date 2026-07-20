@@ -26,6 +26,8 @@ struct DesktopWidgetContentView: View {
             DateCalendarWidgetView(widget: widget)
         case .battery:
             BatteryWidgetView(widget: widget)
+        case .weather:
+            WeatherWidgetView(widget: widget)
         }
     }
 }
@@ -889,6 +891,193 @@ struct BatteryWidgetView: View {
         if snapshot.percentage <= 20 { return .red.opacity(0.92) }
         return .white.opacity(0.84)
     }
+
+    private var layoutScale: CGFloat {
+        let custom = CGFloat(widget.renderingScale)
+        switch widget.size {
+        case .small: return 0.78
+        case .medium: return 1
+        case .large: return 1.30
+        case .custom: return custom
+        }
+    }
+}
+
+struct WeatherWidgetView: View {
+    let widget: DesktopWidget
+
+    @ObservedObject private var service = WeatherService.shared
+
+    var body: some View {
+        let snapshot = service.snapshot
+        let unit = widget.weather.temperatureUnit
+
+        Group {
+            switch widget.weather.mode {
+            case .current:
+                currentLayout(snapshot, unit: unit)
+            case .forecast:
+                forecastLayout(snapshot, unit: unit)
+            }
+        }
+        .foregroundStyle(.white)
+        .onAppear { service.beginObserving() }
+        .onDisappear { service.endObserving() }
+    }
+
+    /// The original compact single-day card: icon, temperature, condition,
+    /// today's high/low, and location.
+    private func currentLayout(
+        _ snapshot: WeatherSnapshot,
+        unit: WeatherTemperatureUnit
+    ) -> some View {
+        HStack(spacing: 13 * layoutScale) {
+            Image(systemName: snapshot.symbolName)
+                .font(.system(size: 31 * layoutScale, weight: .medium))
+                .symbolRenderingMode(.multicolor)
+                .frame(width: 42 * layoutScale)
+
+            VStack(alignment: .leading, spacing: 4 * layoutScale) {
+                Text(temperatureText(snapshot, unit: unit))
+                    .font(.system(size: 25 * layoutScale, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+
+                if widget.weather.showsCondition {
+                    Text(snapshot.errorMessage ?? snapshot.condition.label)
+                        .font(.system(size: 11 * layoutScale, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .lineLimit(1)
+                }
+
+                if widget.weather.showsHighLow, snapshot.hasData {
+                    Text(highLowText(snapshot, unit: unit))
+                        .font(.system(size: 10 * layoutScale, weight: .medium, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.56))
+                }
+
+                if widget.weather.showsLocationName, !snapshot.locationName.isEmpty {
+                    Text(snapshot.locationName)
+                        .font(.system(size: 10 * layoutScale, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.48))
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(14 * layoutScale)
+        .widgetSurface(
+            style: widget.style,
+            cornerRadius: 19 * layoutScale,
+            scale: layoutScale
+        )
+    }
+
+    /// A wider card for people who want more than "just today": today's
+    /// conditions up top, a strip of the next five days below — the same
+    /// "bigger, more info-dense" idea as the Date & Calendar widget's
+    /// month layout versus its compact one.
+    private func forecastLayout(
+        _ snapshot: WeatherSnapshot,
+        unit: WeatherTemperatureUnit
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12 * layoutScale) {
+            HStack(spacing: 11 * layoutScale) {
+                Image(systemName: snapshot.symbolName)
+                    .font(.system(size: 26 * layoutScale, weight: .medium))
+                    .symbolRenderingMode(.multicolor)
+
+                VStack(alignment: .leading, spacing: 2 * layoutScale) {
+                    Text(temperatureText(snapshot, unit: unit))
+                        .font(.system(size: 22 * layoutScale, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+
+                    if widget.weather.showsCondition {
+                        Text(snapshot.errorMessage ?? snapshot.condition.label)
+                            .font(.system(size: 11 * layoutScale, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.62))
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 8 * layoutScale)
+
+                if widget.weather.showsLocationName, !snapshot.locationName.isEmpty {
+                    Text(snapshot.locationName)
+                        .font(.system(size: 10 * layoutScale, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.48))
+                        .lineLimit(1)
+                }
+            }
+
+            if !snapshot.upcomingDays.isEmpty {
+                HStack(spacing: 15 * layoutScale) {
+                    ForEach(snapshot.upcomingDays) { day in
+                        VStack(spacing: 5 * layoutScale) {
+                            Text(weekdayLabel(day.date))
+                                .font(.system(size: 10 * layoutScale, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.58))
+                                .textCase(.uppercase)
+
+                            Image(systemName: day.condition.symbolName(isDay: true))
+                                .font(.system(size: 15 * layoutScale, weight: .medium))
+                                .symbolRenderingMode(.multicolor)
+
+                            Text(dayTemperatureText(day.high(in: unit)))
+                                .font(.system(size: 11 * layoutScale, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+
+                            if widget.weather.showsHighLow {
+                                Text(dayTemperatureText(day.low(in: unit)))
+                                    .font(.system(size: 10 * layoutScale, weight: .medium, design: .rounded))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.white.opacity(0.52))
+                            }
+                        }
+                        .frame(width: 34 * layoutScale)
+                    }
+                }
+            }
+        }
+        .padding(14 * layoutScale)
+        .widgetSurface(
+            style: widget.style,
+            cornerRadius: 19 * layoutScale,
+            scale: layoutScale
+        )
+        .fixedSize()
+    }
+
+    private func temperatureText(
+        _ snapshot: WeatherSnapshot,
+        unit: WeatherTemperatureUnit
+    ) -> String {
+        guard let value = snapshot.temperature(in: unit) else { return "--°" }
+        return "\(Int(value.rounded()))°"
+    }
+
+    private func dayTemperatureText(_ value: Double) -> String {
+        "\(Int(value.rounded()))°"
+    }
+
+    private func highLowText(
+        _ snapshot: WeatherSnapshot,
+        unit: WeatherTemperatureUnit
+    ) -> String {
+        let high = snapshot.high(in: unit).map { "\(Int($0.rounded()))°" } ?? "--°"
+        let low = snapshot.low(in: unit).map { "\(Int($0.rounded()))°" } ?? "--°"
+        return "H:\(high) L:\(low)"
+    }
+
+    private func weekdayLabel(_ date: Date) -> String {
+        Self.weekdayFormatter.string(from: date)
+    }
+
+    private static let weekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.autoupdatingCurrent
+        formatter.dateFormat = "EEE"
+        return formatter
+    }()
 
     private var layoutScale: CGFloat {
         let custom = CGFloat(widget.renderingScale)

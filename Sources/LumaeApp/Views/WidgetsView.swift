@@ -563,6 +563,8 @@ struct WidgetsView: View {
                             dateCalendarCard(widget)
                         case .battery:
                             batteryCard(widget)
+                        case .weather:
+                            weatherCard(widget)
                         case .nowPlaying:
                             EmptyView()
                         }
@@ -846,6 +848,76 @@ struct WidgetsView: View {
                 isOn: Binding(
                     get: { widget.battery.showsProgressBar },
                     set: { model.setBatteryShowsProgressBar($0, id: widget.id) }
+                )
+            )
+        }
+    }
+
+    private func weatherCard(_ widget: DesktopWidget) -> some View {
+        WidgetInspectorCard(title: "Weather") {
+            if !model.state.settings.weatherEnabled {
+                Label(
+                    "Weather is off. Turn it on in Settings to allow a location-based network request.",
+                    systemImage: "network.slash"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                Divider()
+            }
+
+            Picker(
+                "Layout",
+                selection: Binding(
+                    get: { widget.weather.mode },
+                    set: { model.setWeatherMode($0, id: widget.id) }
+                )
+            ) {
+                Text("Current").tag(WeatherWidgetMode.current)
+                Text("Forecast").tag(WeatherWidgetMode.forecast)
+            }
+            .pickerStyle(.segmented)
+
+            if widget.weather.mode == .forecast {
+                Text("Shows today plus the next five days.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            Picker(
+                "Temperature unit",
+                selection: Binding(
+                    get: { widget.weather.temperatureUnit },
+                    set: { model.setWeatherTemperatureUnit($0, id: widget.id) }
+                )
+            ) {
+                Text("°F").tag(WeatherTemperatureUnit.fahrenheit)
+                Text("°C").tag(WeatherTemperatureUnit.celsius)
+            }
+            .pickerStyle(.segmented)
+
+            Divider()
+
+            Toggle(
+                "Show condition",
+                isOn: Binding(
+                    get: { widget.weather.showsCondition },
+                    set: { model.setWeatherShowsCondition($0, id: widget.id) }
+                )
+            )
+            Toggle(
+                "Show high/low",
+                isOn: Binding(
+                    get: { widget.weather.showsHighLow },
+                    set: { model.setWeatherShowsHighLow($0, id: widget.id) }
+                )
+            )
+            Toggle(
+                "Show location name",
+                isOn: Binding(
+                    get: { widget.weather.showsLocationName },
+                    set: { model.setWeatherShowsLocationName($0, id: widget.id) }
                 )
             )
         }
@@ -1233,6 +1305,7 @@ struct WidgetsView: View {
         case .nowPlaying: return "Now Playing"
         case .dateCalendar: return "Date & Calendar"
         case .battery: return "Battery"
+        case .weather: return "Weather"
         }
     }
 
@@ -1242,6 +1315,7 @@ struct WidgetsView: View {
         case .nowPlaying: return "music.note"
         case .dateCalendar: return "calendar"
         case .battery: return "battery.75percent"
+        case .weather: return "cloud.sun.fill"
         }
     }
 
@@ -1255,6 +1329,8 @@ struct WidgetsView: View {
             return "A date display or clean month overview"
         case .battery:
             return "Current power level and charging state"
+        case .weather:
+            return "Temperature and conditions for your location"
         }
     }
 
@@ -1264,6 +1340,7 @@ struct WidgetsView: View {
         case .nowPlaying: return NormalizedWidgetPosition(x: 0.5, y: 0.78)
         case .dateCalendar: return NormalizedWidgetPosition(x: 0.18, y: 0.20)
         case .battery: return NormalizedWidgetPosition(x: 0.82, y: 0.20)
+        case .weather: return NormalizedWidgetPosition(x: 0.82, y: 0.78)
         }
     }
 
@@ -1272,10 +1349,10 @@ struct WidgetsView: View {
         case (.digitalClock, .small), (.nowPlaying, .small): return 16
         case (.digitalClock, .large): return 25
         case (.nowPlaying, .large): return 27
-        case (.dateCalendar, .large), (.battery, .large): return 27
-        case (.dateCalendar, .small), (.battery, .small): return 16
+        case (.dateCalendar, .large), (.battery, .large), (.weather, .large): return 27
+        case (.dateCalendar, .small), (.battery, .small), (.weather, .small): return 16
         case (.digitalClock, _): return 20
-        case (.nowPlaying, _), (.dateCalendar, _), (.battery, _): return 21
+        case (.nowPlaying, _), (.dateCalendar, _), (.battery, _), (.weather, _): return 21
         }
     }
 
@@ -1439,6 +1516,11 @@ private struct WidgetChooserView: View {
                     title: "Battery",
                     description: "Power level and charging state."
                 )
+                chooserCard(
+                    kind: .weather,
+                    title: "Weather",
+                    description: "Temperature and conditions."
+                )
             }
         }
         .padding(16)
@@ -1580,6 +1662,24 @@ private struct WidgetChooserView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .widgetSurface(style: .glass, cornerRadius: 10, scale: 0.5)
+
+        case .weather:
+            HStack(spacing: 7) {
+                Image(systemName: "cloud.sun.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .symbolRenderingMode(.multicolor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("72°")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Text("Partly Cloudy")
+                        .font(.system(size: 6, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.56))
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .widgetSurface(style: .glass, cornerRadius: 10, scale: 0.5)
         }
     }
 
@@ -1589,6 +1689,7 @@ private struct WidgetChooserView: View {
         case .nowPlaying: return "music.note"
         case .dateCalendar: return "calendar"
         case .battery: return "battery.75percent"
+        case .weather: return "cloud.sun.fill"
         }
     }
 }

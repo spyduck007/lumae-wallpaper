@@ -12,13 +12,13 @@
 - Local metadata and JSON persistence, SHA-256 duplicate detection, thumbnails, cache cleanup, missing-file recovery through Locate File, and graceful media errors.
 - Interactive Display Layout control center with stable display fingerprints, independent wallpaper/scaling/enabled state per monitor, synchronized duplicate mode, and seamless span mode.
 - Named playlists with drag ordering, shuffle, previous/next controls, automatic rotation, custom intervals, relaunch persistence, missing-file skipping, and current-presentation or per-display targets.
-- Extensible desktop widget canvas with Clock, Now Playing, Date/Calendar, and Battery widgets; native backdrop glass, distinct Clear/Contrast/None styles, artwork tint, global style defaults, in-place widget refreshes, isolated widget layers, shared masked blur, snapping, custom sizing, layering, undo/redo, and mirrored or per-display layouts.
+- Extensible desktop widget canvas with Clock, Now Playing, Date/Calendar, Battery, and Weather widgets; native backdrop glass, distinct Clear/Contrast/None styles, artwork tint, global style defaults, in-place widget refreshes, isolated widget layers, shared masked blur, snapping, custom sizing, layering, undo/redo, and mirrored or per-display layouts.
 - Scenes save and instantly restore complete desktop environments—including display assignments, presentation mode, playlists, rotation behavior, widgets, styles, and monitor-specific layouts—without duplicating wallpaper files.
 - Independent playback sessions for different per-display videos, plus a shared `AVQueuePlayer` + `AVPlayerLooper` timeline for synchronized duplicate/span playback and one `AVPlayerLayer` per display crop.
 - Automatic optimized video copies make Playback Quality and Maximum Frame Rate real: demanding originals continue playing while Lumae prepares reusable HEVC cache assets, then transition atomically without modifying the source file or Scene data.
 - Fill, Fit, Stretch and Center geometry; negative desktop coordinates, vertical offsets, rotated-size topology and mixed backing scales are represented in the portable core.
 - Non-focusable AppKit wallpaper windows, a crisp custom menu-bar control, close-to-menu-bar lifecycle, settings window, keyboard shortcuts, light/dark appearance and VoiceOver labels.
-- No accounts, telemetry, ads, analytics, StoreKit, paid APIs, uploaded media or network requests.
+- No accounts, telemetry, ads, analytics, StoreKit, or paid APIs. Wallpapers and media are never uploaded. The only network requests are an optional Sparkle update check and, only if you explicitly enable it, the Weather widget's location-based forecast lookup — see Privacy below.
 
 ## Architecture
 
@@ -160,7 +160,10 @@ Battery, Low Power Mode, full-screen pause, quality and FPS settings are modeled
 
 ## Privacy
 
-Lumae keeps wallpapers, hashes, thumbnails, settings, and metadata on the Mac. It makes no telemetry, analytics, advertising, account, tracking, cloud-storage, or wallpaper-upload requests. The only network behavior is an optional Sparkle update check against this repository’s GitHub-hosted appcast and release assets.
+Lumae keeps wallpapers, hashes, thumbnails, settings, and metadata on the Mac. It makes no telemetry, analytics, advertising, account, tracking, or wallpaper-upload requests. There are exactly two kinds of network behavior, both easy to see and both under your control:
+
+- **Update checks** (on by default, `updateChecksEnabled` in Settings): a Sparkle check against this repository's GitHub-hosted appcast and release assets.
+- **Weather** (off by default, `weatherEnabled` in Settings → General): when enabled, Lumae looks up current conditions from [Open-Meteo](https://open-meteo.com), which needs no account, sign-up, or API key. Location comes from either CoreLocation (device location, "Automatic" mode) or Apple's `CLGeocoder` resolving a place name you type ("Manual" mode) — both are Apple's own services, not a third party. Nothing else about your library, settings, or usage is sent anywhere. Leaving Weather off means Lumae makes no location or forecast requests at all.
 
 ## Known limitations
 

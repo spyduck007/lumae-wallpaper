@@ -20,23 +20,19 @@ final class WallpaperWindowManager {
     private var watchdogTimer: DispatchSourceTimer?
     private var isScreenLocked = false
 
-    /// Windows the system has actually pushed at least one occlusion
-    /// update for. A freshly created NSWindow (e.g. right after a display
-    /// is connected/disconnected, which tears down and recreates every
-    /// wallpaper window) has no such history yet, so its occlusionState
-    /// can't be trusted as a signal until the system proves it's tracking
-    /// it — until then the watchdog falls back to always forcing order.
-    private var occlusionTrackedWindowIDs: Set<ObjectIdentifier> = []
-
     /// Continuously reasserts window level/order independent of any
-    /// notification, so the real macOS desktop can never stay visible
-    /// above the wallpaper for longer than one tick of this interval,
-    /// regardless of which system transition caused the reorder. Once a
-    /// window's occlusion tracking is proven live, the tick only does real
-    /// work (an order-front call) when occlusion state indicates something
-    /// is actually covering it, so the steady-state cost of this polling
-    /// is a cheap property read rather than a WindowServer round trip 10
-    /// times a second forever.
+    /// notification or heuristic, so the real macOS desktop can never stay
+    /// visible above the wallpaper for longer than one tick of this
+    /// interval, no matter what triggered the reorder — including
+    /// transitions we haven't specifically enumerated. Earlier revisions
+    /// tried to make this cheaper by only forcing order when a window's
+    /// occlusionState indicated it was actually covered, but that signal
+    /// isn't reliable for every code path that touches window ordering
+    /// (new windows created by a display change, by a Scene switch, by
+    /// anything else), and each gap it left showed up later as a fresh
+    /// flicker report. Unconditional forcing has no such gaps: it doesn't
+    /// need to know why the window might be behind something, only that
+    /// it's checked and corrected at a bounded interval, always.
     private static let watchdogInterval: TimeInterval = 0.1
 
     init() {
@@ -160,22 +156,14 @@ final class WallpaperWindowManager {
     }
 
     private func watchdogTick() {
+        // Locked is the one case where skipping is provably safe rather
+        // than a heuristic: loginwindow covers every wallpaper window
+        // completely for as long as the screen stays locked, so there is
+        // nothing for the watchdog to protect against until it unlocks.
         guard !windows.isEmpty, replacementSnapshot == nil, !isScreenLocked else {
             return
         }
-        // occlusionState is a cached property the system already keeps
-        // current (it's what backs didChangeOcclusionStateNotification),
-        // so reading it here costs nothing like a WindowServer round trip
-        // — but only for a window we've actually seen an occlusion update
-        // for. An untrusted window (just created) always gets forced.
-        for (displayID, window) in windows {
-            let expectedFrame = displayFrames[displayID] ?? window.frame
-            let isTrusted = occlusionTrackedWindowIDs.contains(ObjectIdentifier(window))
-            let isCovered = !isTrusted
-                || !window.isVisible
-                || !window.occlusionState.contains(.visible)
-            repairWindow(window, expectedFrame: expectedFrame, forceOrder: isCovered)
-        }
+        repairWindows(forceOrder: true)
     }
 
     func beginReplacement() {
@@ -324,7 +312,6 @@ final class WallpaperWindowManager {
             NotificationCenter.default.removeObserver($0)
         }
         snapshot.windows.values.forEach {
-            occlusionTrackedWindowIDs.remove(ObjectIdentifier($0))
             $0.orderOut(nil)
             $0.contentView = nil
         }
@@ -332,20 +319,8 @@ final class WallpaperWindowManager {
 
     private func observeWindow(_ window: WallpaperWindow) {
         let center = NotificationCenter.default
-        let id = ObjectIdentifier(window)
-
-        let occlusionToken = center.addObserver(
-            forName: NSWindow.didChangeOcclusionStateNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.occlusionTrackedWindowIDs.insert(id)
-                self?.scheduleRepairBurst(delays: [0, 0.04, 0.12, 0.28])
-            }
-        }
-
-        let otherTokens = [
+        let tokens = [
+            NSWindow.didChangeOcclusionStateNotification,
             NSWindow.didChangeScreenNotification,
             NSWindow.didResizeNotification
         ].map { name in
@@ -361,7 +336,7 @@ final class WallpaperWindowManager {
                 }
             }
         }
-        windowObservers[id] = [occlusionToken] + otherTokens
+        windowObservers[ObjectIdentifier(window)] = tokens
     }
 
     private func observe(
@@ -702,7 +677,7 @@ final class WallpaperCompositeView: NSView {
             return false
         case .digitalClock:
             return !widget.digitalClock.showsSeconds
-        case .dateCalendar, .battery:
+        case .dateCalendar, .battery, .weather:
             return true
         }
     }
@@ -718,10 +693,10 @@ final class WallpaperCompositeView: NSView {
         case (.nowPlaying, .medium): return 21
         case (.nowPlaying, .large): return 27
         case (.nowPlaying, .custom): return 21 * scale
-        case (.dateCalendar, .small), (.battery, .small): return 16 * 0.78
-        case (.dateCalendar, .medium), (.battery, .medium): return 20
-        case (.dateCalendar, .large), (.battery, .large): return 20 * 1.30
-        case (.dateCalendar, .custom), (.battery, .custom): return 20 * scale
+        case (.dateCalendar, .small), (.battery, .small), (.weather, .small): return 16 * 0.78
+        case (.dateCalendar, .medium), (.battery, .medium), (.weather, .medium): return 20
+        case (.dateCalendar, .large), (.battery, .large), (.weather, .large): return 20 * 1.30
+        case (.dateCalendar, .custom), (.battery, .custom), (.weather, .custom): return 20 * scale
         }
     }
 }

@@ -101,6 +101,8 @@ final class AppModel: ObservableObject {
         Task.detached(priority: .utility) { [cache] in
             try? await cache.cleanup(limit: limit)
         }
+
+        updateWeatherServiceConfiguration()
     }
 
     func presentImporter() {
@@ -405,6 +407,35 @@ final class AppModel: ObservableObject {
             topology: displayTopology
         )
         persistSoon()
+    }
+
+    func setWeatherEnabled(_ enabled: Bool) {
+        guard state.settings.weatherEnabled != enabled else { return }
+        state.settings.weatherEnabled = enabled
+        updateWeatherServiceConfiguration()
+        persistSoon()
+    }
+
+    func setWeatherLocationMode(_ mode: WeatherLocationMode) {
+        guard state.settings.weatherLocationMode != mode else { return }
+        state.settings.weatherLocationMode = mode
+        updateWeatherServiceConfiguration()
+        persistSoon()
+    }
+
+    func setWeatherManualLocationName(_ name: String) {
+        guard state.settings.weatherManualLocationName != name else { return }
+        state.settings.weatherManualLocationName = name
+        updateWeatherServiceConfiguration()
+        persistSoon()
+    }
+
+    private func updateWeatherServiceConfiguration() {
+        WeatherService.shared.updateConfiguration(
+            enabled: state.settings.weatherEnabled,
+            locationMode: state.settings.weatherLocationMode,
+            manualLocationName: state.settings.weatherManualLocationName
+        )
     }
 
     func advancePlaylist() {
@@ -1356,6 +1387,36 @@ extension AppModel {
         }
     }
 
+    func setWeatherMode(_ mode: WeatherWidgetMode, id: UUID) {
+        performWidgetMutation(named: "Change Weather Layout") {
+            updateWidgetWithoutHistory(id: id) { $0.weather.mode = mode }
+        }
+    }
+
+    func setWeatherTemperatureUnit(_ unit: WeatherTemperatureUnit, id: UUID) {
+        performWidgetMutation(named: "Change Temperature Unit") {
+            updateWidgetWithoutHistory(id: id) { $0.weather.temperatureUnit = unit }
+        }
+    }
+
+    func setWeatherShowsCondition(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: "Change Weather Condition") {
+            updateWidgetWithoutHistory(id: id) { $0.weather.showsCondition = enabled }
+        }
+    }
+
+    func setWeatherShowsHighLow(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: "Change Weather High/Low") {
+            updateWidgetWithoutHistory(id: id) { $0.weather.showsHighLow = enabled }
+        }
+    }
+
+    func setWeatherShowsLocationName(_ enabled: Bool, id: UUID) {
+        performWidgetMutation(named: "Change Weather Location") {
+            updateWidgetWithoutHistory(id: id) { $0.weather.showsLocationName = enabled }
+        }
+    }
+
     func bringWidgetForward(id: UUID, for displayID: String?) {
         reorderWidget(id: id, for: displayID, actionName: "Bring Widget Forward") { index, collection in
             guard index + 1 < collection.count else { return }
@@ -1484,6 +1545,14 @@ extension AppModel {
                 size: .medium,
                 style: defaultWidgetStyle
             )
+        case .weather:
+            return DesktopWidget(
+                id: id,
+                kind: .weather,
+                position: NormalizedWidgetPosition(x: 0.82, y: 0.78),
+                size: .medium,
+                style: defaultWidgetStyle
+            )
         }
     }
 
@@ -1495,9 +1564,9 @@ extension AppModel {
         case (.nowPlaying, .small): return 0.74
         case (.nowPlaying, .medium): return 1
         case (.nowPlaying, .large): return 1.33
-        case (.dateCalendar, .small), (.battery, .small): return 0.78
-        case (.dateCalendar, .medium), (.battery, .medium): return 1
-        case (.dateCalendar, .large), (.battery, .large): return 1.30
+        case (.dateCalendar, .small), (.battery, .small), (.weather, .small): return 0.78
+        case (.dateCalendar, .medium), (.battery, .medium), (.weather, .medium): return 1
+        case (.dateCalendar, .large), (.battery, .large), (.weather, .large): return 1.30
         case (_, .custom): return widget.customScale ?? 1
         }
     }
@@ -1517,6 +1586,8 @@ extension AppModel {
             widget.dateCalendar.showsBackground = showsBackground
         case .battery:
             widget.battery.showsBackground = showsBackground
+        case .weather:
+            break
         }
     }
 

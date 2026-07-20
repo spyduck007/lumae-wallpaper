@@ -56,8 +56,8 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Sources/LumaeApp/Resources/Lumae.entitlements
         ENABLE_APP_SANDBOX: NO
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
-        CURRENT_PROJECT_VERSION: 23
-        MARKETING_VERSION: 0.6.7
+        CURRENT_PROJECT_VERSION: 24
+        MARKETING_VERSION: 0.7.0
     scheme:
       testTargets:
         - LumaeCoreTests

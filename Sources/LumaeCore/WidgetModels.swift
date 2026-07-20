@@ -5,6 +5,7 @@ public enum DesktopWidgetKind: String, Codable, CaseIterable, Sendable {
     case nowPlaying
     case dateCalendar
     case battery
+    case weather
 }
 
 public enum DesktopWidgetSize: String, Codable, CaseIterable, Sendable {
@@ -163,6 +164,62 @@ public struct BatteryWidgetSettings: Codable, Hashable, Sendable {
     }
 }
 
+public struct WeatherWidgetSettings: Codable, Hashable, Sendable {
+    public var mode: WeatherWidgetMode
+    public var temperatureUnit: WeatherTemperatureUnit
+    public var showsCondition: Bool
+    public var showsHighLow: Bool
+    public var showsLocationName: Bool
+
+    public init(
+        mode: WeatherWidgetMode = .current,
+        temperatureUnit: WeatherTemperatureUnit = Locale.current.measurementSystem == .us
+            ? .fahrenheit
+            : .celsius,
+        showsCondition: Bool = true,
+        showsHighLow: Bool = true,
+        showsLocationName: Bool = true
+    ) {
+        self.mode = mode
+        self.temperatureUnit = temperatureUnit
+        self.showsCondition = showsCondition
+        self.showsHighLow = showsHighLow
+        self.showsLocationName = showsLocationName
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mode
+        case temperatureUnit
+        case showsCondition
+        case showsHighLow
+        case showsLocationName
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try container.decodeIfPresent(
+            WeatherWidgetMode.self,
+            forKey: .mode
+        ) ?? .current
+        temperatureUnit = try container.decodeIfPresent(
+            WeatherTemperatureUnit.self,
+            forKey: .temperatureUnit
+        ) ?? (Locale.current.measurementSystem == .us ? .fahrenheit : .celsius)
+        showsCondition = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .showsCondition
+        ) ?? true
+        showsHighLow = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .showsHighLow
+        ) ?? true
+        showsLocationName = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .showsLocationName
+        ) ?? true
+    }
+}
+
 public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
     public var id: UUID
     public var kind: DesktopWidgetKind
@@ -175,6 +232,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
     public var nowPlaying: NowPlayingWidgetSettings
     public var dateCalendar: DateCalendarWidgetSettings
     public var battery: BatteryWidgetSettings
+    public var weather: WeatherWidgetSettings
 
     public init(
         id: UUID = UUID(),
@@ -187,7 +245,8 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         digitalClock: DigitalClockWidgetSettings = DigitalClockWidgetSettings(),
         nowPlaying: NowPlayingWidgetSettings = NowPlayingWidgetSettings(),
         dateCalendar: DateCalendarWidgetSettings = DateCalendarWidgetSettings(),
-        battery: BatteryWidgetSettings = BatteryWidgetSettings()
+        battery: BatteryWidgetSettings = BatteryWidgetSettings(),
+        weather: WeatherWidgetSettings = WeatherWidgetSettings()
     ) {
         self.id = id
         self.kind = kind
@@ -200,6 +259,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         self.nowPlaying = nowPlaying
         self.dateCalendar = dateCalendar
         self.battery = battery
+        self.weather = weather
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -214,6 +274,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         case nowPlaying
         case dateCalendar
         case battery
+        case weather
     }
 
     public init(from decoder: Decoder) throws {
@@ -249,6 +310,10 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
             BatteryWidgetSettings.self,
             forKey: .battery
         ) ?? BatteryWidgetSettings()
+        weather = try container.decodeIfPresent(
+            WeatherWidgetSettings.self,
+            forKey: .weather
+        ) ?? WeatherWidgetSettings()
         style = try container.decodeIfPresent(
             WidgetVisualStyle.self,
             forKey: .style
@@ -274,6 +339,7 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
         try container.encode(nowPlaying, forKey: .nowPlaying)
         try container.encode(dateCalendar, forKey: .dateCalendar)
         try container.encode(battery, forKey: .battery)
+        try container.encode(weather, forKey: .weather)
     }
 
     private static func legacyStyle(
@@ -293,6 +359,12 @@ public struct DesktopWidget: Identifiable, Codable, Hashable, Sendable {
             showedBackground = dateCalendar.showsBackground
         case .battery:
             showedBackground = battery.showsBackground
+        case .weather:
+            // Weather was introduced after `style` already existed, so no
+            // legacy-saved widget can ever decode with kind == .weather
+            // and a missing style key; this branch is unreachable in
+            // practice but required for switch exhaustiveness.
+            showedBackground = true
         }
         return showedBackground ? .glass : .none
     }
