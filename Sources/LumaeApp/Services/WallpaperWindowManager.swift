@@ -16,9 +16,26 @@ final class WallpaperWindowManager {
     private var windowObservers: [ObjectIdentifier: [NSObjectProtocol]] = [:]
     private var eventMonitors: [Any] = []
     private var repairWorkItems: [DispatchWorkItem] = []
-    private var replacementSnapshot: ReplacementSnapshot?
     private var watchdogTimer: DispatchSourceTimer?
     private var isScreenLocked = false
+
+    /// True for the synchronous span of one applyConfiguration call. Every
+    /// wallpaper window used to be destroyed and recreated on *any* config
+    /// change — a scene switch, a wallpaper swap, even a settings tweak,
+    /// not just a real display change — which meant the window ordering
+    /// watchdog spent much of its life protecting brand-new NSWindow
+    /// objects. That mattered because a freshly created window isn't
+    /// necessarily part of whatever WindowServer caches for live Space
+    /// transitions yet, so a swipe gesture shortly after a scene switch
+    /// could reveal the real desktop no matter how aggressively this class
+    /// reordered it. Now install() reuses the existing window for a
+    /// display when one already exists, swapping only its content, so
+    /// windows persist for as long as a display stays connected — the
+    /// same NSWindow objects continuously, not recreated by every scene
+    /// switch or wallpaper change. Only a genuine display connect/
+    /// disconnect ever creates or destroys a window now.
+    private var isReplacing = false
+    private var touchedDisplayIDsThisCycle: Set<String> = []
 
     /// Continuously reasserts window level/order independent of any
     /// notification or heuristic, so the real macOS desktop can never stay
@@ -160,59 +177,52 @@ final class WallpaperWindowManager {
         // than a heuristic: loginwindow covers every wallpaper window
         // completely for as long as the screen stays locked, so there is
         // nothing for the watchdog to protect against until it unlocks.
-        guard !windows.isEmpty, replacementSnapshot == nil, !isScreenLocked else {
+        guard !windows.isEmpty, !isReplacing, !isScreenLocked else {
             return
         }
         repairWindows(forceOrder: true)
     }
 
     func beginReplacement() {
-        guard replacementSnapshot == nil else { return }
+        guard !isReplacing else { return }
+        isReplacing = true
         cancelRepairTasks()
-        replacementSnapshot = ReplacementSnapshot(
-            windows: windows,
-            displayFrames: displayFrames,
-            windowObservers: windowObservers
-        )
-        windows = [:]
-        displayFrames = [:]
-        windowObservers = [:]
+        touchedDisplayIDsThisCycle = []
     }
 
     func commitReplacement() {
-        guard let snapshot = replacementSnapshot else { return }
-        replacementSnapshot = nil
+        guard isReplacing else { return }
+        isReplacing = false
+
+        // Anything not touched this cycle is no longer part of the
+        // configuration (display disconnected, or no longer assigned a
+        // wallpaper) and gets retired; everything else was updated in
+        // place by install() and keeps its existing NSWindow.
+        let staleDisplayIDs = Set(windows.keys)
+            .subtracting(touchedDisplayIDsThisCycle)
+        for displayID in staleDisplayIDs {
+            retireWindow(for: displayID)
+        }
 
         repairWindows(forceOrder: true)
-        let workItem = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated {
-                self?.retire(snapshot)
-            }
-        }
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + 0.08,
-            execute: workItem
-        )
         scheduleRepairBurst(delays: [0.02, 0.10, 0.24])
     }
 
     func rollbackReplacement() {
-        guard let snapshot = replacementSnapshot else { return }
-        replacementSnapshot = nil
-        retireCurrentWindows()
-        windows = snapshot.windows
-        displayFrames = snapshot.displayFrames
-        windowObservers = snapshot.windowObservers
+        guard isReplacing else { return }
+        isReplacing = false
+        // Windows were updated in place as install() ran, so there is no
+        // separate "old" state to restore to — whatever is currently
+        // showing (a mix of already-updated and not-yet-reached displays)
+        // is left as is and just re-ordered; the engine reverts its own
+        // state and will reapply cleanly on the next successful attempt.
         repairWindows(forceOrder: true)
         scheduleRepairBurst(delays: [0.03, 0.12, 0.30])
     }
 
     func removeAll() {
         cancelRepairTasks()
-        if let snapshot = replacementSnapshot {
-            retire(snapshot)
-            replacementSnapshot = nil
-        }
+        isReplacing = false
         retireCurrentWindows()
     }
 
@@ -261,15 +271,27 @@ final class WallpaperWindowManager {
             width: display.framePoints.size.width,
             height: display.framePoints.size.height
         )
-        let window = WallpaperWindow(contentRect: frame)
-        window.contentView = WallpaperCompositeView(
-            wallpaperView: view,
-            widgets: widgets
-        )
+        touchedDisplayIDsThisCycle.insert(display.id)
         displayFrames[display.id] = frame
-        windows[display.id] = window
-        observeWindow(window)
-        repairWindow(window, expectedFrame: frame, forceOrder: true)
+
+        if let existing = windows[display.id] {
+            if existing.frame != frame {
+                existing.setFrame(frame, display: true, animate: false)
+            }
+            let composite = existing.contentView as? WallpaperCompositeView
+            composite?.updateWallpaperContent(view)
+            composite?.updateWidgets(widgets)
+            repairWindow(existing, expectedFrame: frame, forceOrder: true)
+        } else {
+            let window = WallpaperWindow(contentRect: frame)
+            window.contentView = WallpaperCompositeView(
+                wallpaperView: view,
+                widgets: widgets
+            )
+            windows[display.id] = window
+            observeWindow(window)
+            repairWindow(window, expectedFrame: frame, forceOrder: true)
+        }
         scheduleRepairBurst(delays: [0.03, 0.12, 0.30])
     }
 
@@ -296,25 +318,19 @@ final class WallpaperWindowManager {
     }
 
     private func retireCurrentWindows() {
-        let snapshot = ReplacementSnapshot(
-            windows: windows,
-            displayFrames: displayFrames,
-            windowObservers: windowObservers
-        )
-        windows = [:]
-        displayFrames = [:]
-        windowObservers = [:]
-        retire(snapshot)
+        for displayID in Array(windows.keys) {
+            retireWindow(for: displayID)
+        }
     }
 
-    private func retire(_ snapshot: ReplacementSnapshot) {
-        snapshot.windowObservers.values.flatMap { $0 }.forEach {
-            NotificationCenter.default.removeObserver($0)
+    private func retireWindow(for displayID: String) {
+        guard let window = windows.removeValue(forKey: displayID) else { return }
+        displayFrames.removeValue(forKey: displayID)
+        if let tokens = windowObservers.removeValue(forKey: ObjectIdentifier(window)) {
+            tokens.forEach { NotificationCenter.default.removeObserver($0) }
         }
-        snapshot.windows.values.forEach {
-            $0.orderOut(nil)
-            $0.contentView = nil
-        }
+        window.orderOut(nil)
+        window.contentView = nil
     }
 
     private func observeWindow(_ window: WallpaperWindow) {
@@ -429,12 +445,6 @@ final class WallpaperWindowManager {
     }
 }
 
-private struct ReplacementSnapshot {
-    var windows: [String: WallpaperWindow]
-    var displayFrames: [String: NSRect]
-    var windowObservers: [ObjectIdentifier: [NSObjectProtocol]]
-}
-
 final class WallpaperWindow: NSWindow {
     private static let wallpaperLevel = NSWindow.Level(
         rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) - 1
@@ -478,7 +488,7 @@ final class WallpaperWindow: NSWindow {
 }
 
 final class WallpaperCompositeView: NSView {
-    private let wallpaperView: NSView
+    private var wallpaperView: NSView
     private let glassBackdrop = SharedWidgetBackdropView(
         material: .underWindowBackground,
         opacity: 0.52
@@ -527,6 +537,33 @@ final class WallpaperCompositeView: NSView {
     deinit {
         if let accessibilityObserver {
             NotificationCenter.default.removeObserver(accessibilityObserver)
+        }
+    }
+
+    /// Swaps in new wallpaper content (a fresh image or video view) while
+    /// this composite view's own NSWindow stays exactly as it is — the
+    /// window itself is never recreated for an ordinary wallpaper/scene
+    /// change any more, only for a genuine display connect/disconnect.
+    /// The new view is layered above the old one and pinned to the same
+    /// bounds; the old one is removed a moment later rather than
+    /// immediately, so a still-buffering video or a newly decoding image
+    /// never shows a black gap in between.
+    func updateWallpaperContent(_ newView: NSView) {
+        let previousView = wallpaperView
+        guard previousView !== newView else { return }
+        wallpaperView = newView
+
+        newView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(newView, positioned: .above, relativeTo: previousView)
+        NSLayoutConstraint.activate([
+            newView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            newView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            newView.topAnchor.constraint(equalTo: topAnchor),
+            newView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak previousView] in
+            previousView?.removeFromSuperview()
         }
     }
 
